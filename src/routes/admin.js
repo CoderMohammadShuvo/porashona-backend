@@ -175,6 +175,45 @@ router.post("/content/subtopics", requireAuth, requireAdmin, async (req, res) =>
 });
 
 /**
+ * Content Manager: Get all teachers
+ */
+router.get("/content/teachers", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("teachers").select("*").order("name");
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Create Subject
+ */
+router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("subjects").insert([req.body]).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Create Chapter
+ */
+router.post("/content/chapters", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("chapters").insert([req.body]).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * Content Manager: Update subtopic
  */
 router.patch("/content/subtopics/:id", requireAuth, requireAdmin, async (req, res) => {
