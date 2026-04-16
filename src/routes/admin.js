@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { v4 as uuidv4 } from "uuid";
 import { supabase, supabaseAnon } from "../lib/supabase.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 
@@ -162,9 +163,10 @@ router.get("/content/subtopics", requireAuth, requireAdmin, async (req, res) => 
  */
 router.post("/content/subtopics", requireAuth, requireAdmin, async (req, res) => {
   try {
+    const payload = { id: uuidv4(), ...req.body };
     const { data, error } = await supabase
       .from("subtopics")
-      .insert([req.body])
+      .insert([payload])
       .select()
       .single();
     if (error) throw error;
@@ -192,7 +194,8 @@ router.get("/content/teachers", requireAuth, requireAdmin, async (req, res) => {
  */
 router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from("subjects").insert([req.body]).select().single();
+    const payload = { id: uuidv4(), ...req.body };
+    const { data, error } = await supabase.from("subjects").insert([payload]).select().single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
@@ -205,7 +208,8 @@ router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => 
  */
 router.post("/content/chapters", requireAuth, requireAdmin, async (req, res) => {
   try {
-    const { data, error } = await supabase.from("chapters").insert([req.body]).select().single();
+    const payload = { id: uuidv4(), ...req.body };
+    const { data, error } = await supabase.from("chapters").insert([payload]).select().single();
     if (error) throw error;
     res.json(data);
   } catch (err) {
