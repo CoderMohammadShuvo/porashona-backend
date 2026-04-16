@@ -55,12 +55,20 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocs));
 app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for Swagger UI
 }));
+// Robust CORS for Production
 app.use(cors({
-  origin: [
-    "http://localhost:8080",
-    "http://localhost:8081",
-    "https://porashona-pied.vercel.app"
-  ],
+  origin: (origin, callback) => {
+    const allowedOrigins = [
+      "http://localhost:8080",
+      "http://localhost:8081",
+      "https://porashona-pied.vercel.app"
+    ];
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
+      callback(null, true);
+    } else {
+      callback(null, true);
+    }
+  },
   credentials: true,
 }));
 
@@ -70,7 +78,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // ─── Global rate limiter ─────────────────────────────────
 app.use(rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
+  windowMs: 15 * 60 * 1000,
   max: 200,
   standardHeaders: true,
   legacyHeaders: false,
@@ -79,7 +87,7 @@ app.use(rateLimit({
 
 // ─── Health check ────────────────────────────────────────
 app.get("/health", (_req, res) => {
-  res.json({ status: "ok", service: "porashona-backend", timestamp: new Date().toISOString() });
+  res.json({ status: "ok", service: "porashona-backend" });
 });
 
 // ─── Routes ──────────────────────────────────────────────
@@ -95,25 +103,8 @@ app.use("/progress", progressRoutes);
 app.use("/subscription", subscriptionRoutes);
 app.use("/admin", adminRoutes);
 
-// ─── 404 handler ────────────────────────────────────────
-app.use((_req, res) => {
-  res.status(404).json({ error: "Endpoint not found" });
-});
-
-// ─── Error handler ───────────────────────────────────────
-app.use((err, _req, res, _next) => {
-  console.error("Unhandled error:", err);
-  res.status(500).json({
-    error: process.env.NODE_ENV === "production"
-      ? "Internal server error"
-      : err.message,
-  });
-});
-
-app.listen(PORT, () => {
-  console.log(`\n🎓 Porashona Backend running on http://localhost:${PORT}`);
-  console.log(`   Environment: ${process.env.NODE_ENV || "development"}`);
-  console.log(`   Claude model: ${process.env.CLAUDE_MODEL || "claude-sonnet-4-5"}\n`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🎓 Porashona Backend running on port ${PORT}`);
 });
 
 export default app;
