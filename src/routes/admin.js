@@ -95,4 +95,117 @@ router.get("/subscriptions", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
+/**
+ * Content Manager: Get all subjects
+ */
+router.get("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("subjects")
+      .select("*")
+      .order("class", { ascending: true });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Get chapters for a subject
+ */
+router.get("/content/chapters/:subjectId", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("chapters")
+      .select("*")
+      .eq("subject_id", req.params.subjectId)
+      .order("sort_order", { ascending: true });
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: List subtopics/videos with optional filters
+ */
+router.get("/content/subtopics", requireAuth, requireAdmin, async (req, res) => {
+  const { chapter_id } = req.query;
+  try {
+    let query = supabase
+      .from("subtopics")
+      .select(`
+        *,
+        chapters (
+          title,
+          subjects ( name, class, "group" )
+        )
+      `)
+      .order("created_at", { ascending: false });
+
+    if (chapter_id) {
+      query = query.eq("chapter_id", chapter_id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Create subtopic (Video)
+ */
+router.post("/content/subtopics", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("subtopics")
+      .insert([req.body])
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Update subtopic
+ */
+router.patch("/content/subtopics/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("subtopics")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Delete subtopic
+ */
+router.delete("/content/subtopics/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase
+      .from("subtopics")
+      .delete()
+      .eq("id", req.params.id);
+    if (error) throw error;
+    res.status(204).send();
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;
