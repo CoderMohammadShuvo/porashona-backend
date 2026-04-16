@@ -192,12 +192,41 @@ router.get("/content/teachers", requireAuth, requireAdmin, async (req, res) => {
 /**
  * Content Manager: Create Subject
  */
+/**
+ * Content Manager: Create Subject
+ */
 router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
   try {
     const payload = { id: uuidv4(), ...req.body };
     const { data, error } = await supabase.from("subjects").insert([payload]).select().single();
     if (error) throw error;
     res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Update Subject
+ */
+router.patch("/content/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("subjects").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Delete Subject
+ */
+router.delete("/content/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from("subjects").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -212,6 +241,32 @@ router.post("/content/chapters", requireAuth, requireAdmin, async (req, res) => 
     const { data, error } = await supabase.from("chapters").insert([payload]).select().single();
     if (error) throw error;
     res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * Content Manager: Update Chapter
+ */
+router.patch("/content/chapters/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase.from("chapters").update(req.body).eq("id", req.params.id).select().single();
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+  * Content Manager: Delete Chapter
+  */
+router.delete("/content/chapters/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { error } = await supabase.from("chapters").delete().eq("id", req.params.id);
+    if (error) throw error;
+    res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
