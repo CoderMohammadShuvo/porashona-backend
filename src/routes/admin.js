@@ -28,9 +28,15 @@ router.post("/login", async (req, res) => {
       .single();
 
     if (adminError || !admin) {
-      // Not an admin, sign them out immediately
-      await supabase.auth.signOut();
-      return res.status(403).json({ error: "Access denied: Not an admin user" });
+      console.error("Admin lookup failed:", adminError);
+      return res.status(403).json({ 
+        error: "Access denied: Not an admin user", 
+        debug: {
+          searchedId: data.user.id,
+          error: adminError?.message || "Record not found",
+          code: adminError?.code
+        }
+      });
     }
 
     res.json({
