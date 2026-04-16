@@ -56,7 +56,11 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for Swagger UI
 }));
 app.use(cors({
-  origin: true, // Allow all origins in development
+  origin: [
+    "http://localhost:8080",
+    "http://localhost:8081",
+    "https://porashona-pied.vercel.app"
+  ],
   credentials: true,
 }));
 
