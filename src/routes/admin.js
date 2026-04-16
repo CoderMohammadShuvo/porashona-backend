@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase.js";
+import { supabase, supabaseAnon } from "../lib/supabase.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
 
 const router = Router();
@@ -16,11 +16,12 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // 1. Perform Auth check with the Anon client
+    const { data, error } = await supabaseAnon.auth.signInWithPassword({ email, password });
 
     if (error) return res.status(401).json({ error: error.message });
 
-    // Check if user is an admin
+    // 2. Perform Admin check with the Service Role client (bypasses RLS)
     const { data: admin, error: adminError } = await supabase
       .from("admin_users")
       .select("role")
