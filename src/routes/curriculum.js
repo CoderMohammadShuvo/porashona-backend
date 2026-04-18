@@ -30,6 +30,41 @@ router.get("/subjects", requireAuth, async (req, res) => {
   }
 });
 
+// Temporary debug route — remove after debugging
+router.get("/debug", requireAuth, async (req, res) => {
+  const results = {};
+
+  // Check env vars (don't expose actual values)
+  results.env = {
+    SUPABASE_URL: !!process.env.SUPABASE_URL,
+    SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+    SUPABASE_ANON_KEY: !!process.env.SUPABASE_ANON_KEY,
+    url_preview: process.env.SUPABASE_URL?.substring(0, 40),
+  };
+
+  // Raw subjects query with full error
+  const { data: subjects, error: subjectsError, count } = await supabase
+    .from("subjects")
+    .select("*", { count: "exact" });
+  results.subjects = {
+    data: subjects,
+    error: subjectsError,
+    count,
+  };
+
+  // Raw chapters query
+  const { data: chapters, error: chaptersError } = await supabase
+    .from("chapters")
+    .select("*")
+    .limit(5);
+  results.chapters = {
+    data: chapters,
+    error: chaptersError,
+  };
+
+  res.json(results);
+});
+
 /**
  * @swagger
  * /curriculum/{class}/{group}:
