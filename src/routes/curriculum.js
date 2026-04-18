@@ -25,7 +25,7 @@ const router = Router();
  *       200:
  *         description: List of subjects
  */
-router.get("/:class/:group", requireAuth, async (req, res) => {
+router.get("/:class/:group",  async (req, res) => {
   const { class: studentClass, group } = req.params;
 
   try {
