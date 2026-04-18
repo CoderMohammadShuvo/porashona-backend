@@ -6,6 +6,32 @@ const router = Router();
 
 /**
  * @swagger
+ * /curriculum/subjects:
+ *   get:
+ *     summary: Get all subjects list (without chapters)
+ *     tags: [Curriculum]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of subjects
+ */
+router.get("/subjects", requireAuth, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("subjects")
+      .select("*")
+      .order("sort_order");
+
+    if (error) return res.status(500).json({ error: error.message });
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch subjects" });
+  }
+});
+
+/**
+ * @swagger
  * /curriculum/{class}/{group}:
  *   get:
  *     summary: Get all subjects and chapters for a class and group
@@ -25,13 +51,15 @@ const router = Router();
  *       200:
  *         description: List of subjects
  */
-router.get("/:class/:group",  async (req, res) => {
+router.get("/:class/:group", requireAuth, async (req, res) => {
   const { class: studentClass, group } = req.params;
 
   try {
     const classVal = parseInt(studentClass) || req.user?.class || 10;
     const groupVal = group || req.user?.group || "Science";
 
+    // Fetch subjects matching the student's class (or null class = universal)
+    // and matching the student's group (or "All" = universal)
     const { data: subjects, error } = await supabase
       .from("subjects")
       .select(`
@@ -40,20 +68,30 @@ router.get("/:class/:group",  async (req, res) => {
           id, title, sort_order, is_free, nctb_verified
         )
       `)
-      .or(`"class".eq.${classVal},"class".is.null`)
-      .or(`"group".ilike.${groupVal},"group".ilike.All`)
+      .or(`class.eq.${classVal},class.is.null`)
       .order("sort_order");
 
     if (error) return res.status(500).json({ error: error.message });
 
+    // Filter by group in JS (PostgREST ilike with OR on same column is tricky)
+    const filtered = subjects.filter((s) => {
+      if (!s.group) return true; // null group = universal
+      const subjectGroup = s.group.toLowerCase();
+      return (
+        subjectGroup === groupVal.toLowerCase() ||
+        subjectGroup === "all"
+      );
+    });
+
     // Sort chapters within each subject
-    const result = subjects.map((s) => ({
+    const result = filtered.map((s) => ({
       ...s,
       chapters: (s.chapters || []).sort((a, b) => a.sort_order - b.sort_order),
     }));
 
     res.json(result);
   } catch (err) {
+    console.error("Curriculum fetch error:", err);
     res.status(500).json({ error: "Failed to fetch curriculum" });
   }
 });
@@ -93,7 +131,20 @@ router.get("/subject/:subjectId", requireAuth, async (req, res) => {
 
     if (error || !subject) return res.status(404).json({ error: "Subject not found" });
 
-    res.json(subject);
+    // Sort chapters and subtopics
+    const result = {
+      ...subject,
+      chapters: (subject.chapters || [])
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((ch) => ({
+          ...ch,
+          subtopics: (ch.subtopics || [])
+            .filter((st) => st.is_published)
+            .sort((a, b) => a.sort_order - b.sort_order),
+        })),
+    };
+
+    res.json(result);
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch subject" });
   }
@@ -126,7 +177,7 @@ router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
         *,
         subtopics (
           id, title, sort_order, video_url_free, video_url_paid,
-          youtube_video_id, duration_seconds, is_published, notes_text
+          youtube_video_id, duration_seconds, is_published, notes_text, is_free
         )
       `)
       .eq("id", chapterId)
@@ -142,22 +193,25 @@ router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
       .eq("status", "active")
       .gt("expires_at", new Date().toISOString())
       .limit(1)
-      .single();
+      .maybeSingle();
 
     const isPro = !!sub;
 
-    // Strip paid video URLs for free users
+    // Strip paid video URLs for free users, but keep free subtopic videos
     const subtopics = (chapter.subtopics || [])
       .filter((st) => st.is_published)
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((st) => ({
         ...st,
+        // Free subtopics: all users can see the youtube_video_id
+        // Paid subtopics: only PRO users see the youtube_video_id
         video_url_paid: isPro ? st.video_url_paid : null,
-        youtube_video_id: isPro ? st.youtube_video_id : null,
+        youtube_video_id: (isPro || st.is_free) ? st.youtube_video_id : null,
       }));
 
     res.json({ ...chapter, subtopics });
   } catch (err) {
+    console.error("Chapter fetch error:", err);
     res.status(500).json({ error: "Failed to fetch chapter" });
   }
 });
