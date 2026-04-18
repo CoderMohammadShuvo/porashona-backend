@@ -4,7 +4,29 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-// POST /progress/video
+/**
+ * @swagger
+ * /progress/video:
+ *   post:
+ *     summary: Update video watching progress
+ *     tags: [Progress]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [subtopic_id]
+ *             properties:
+ *               subtopic_id: { type: string }
+ *               watched_seconds: { type: integer }
+ *               completed: { type: boolean }
+ *     responses:
+ *       200:
+ *         description: Progress updated
+ */
 router.post("/video", requireAuth, async (req, res) => {
   const { subtopic_id, watched_seconds, completed } = req.body;
 
@@ -46,7 +68,18 @@ router.post("/video", requireAuth, async (req, res) => {
   }
 });
 
-// GET /progress/user
+/**
+ * @swagger
+ * /progress/user:
+ *   get:
+ *     summary: Get all progress for current user
+ *     tags: [Progress]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of user progress records
+ */
 router.get("/user", requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('video_progress')

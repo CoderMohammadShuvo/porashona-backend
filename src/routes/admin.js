@@ -6,8 +6,28 @@ import { requireAuth, requireAdmin } from "../middleware/auth.js";
 const router = Router();
 
 /**
- * Admin Login
- * Checks if the user exists in admin_users table after successful auth
+ * @swagger
+ * /admin/login:
+ *   post:
+ *     summary: Admin Login
+ *     tags: [Admin]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [email, password]
+ *             properties:
+ *               email: { type: string }
+ *               password: { type: string }
+ *     responses:
+ *       200:
+ *         description: Login successful
+ *       401:
+ *         description: Invalid credentials
+ *       403:
+ *         description: Not an admin
  */
 router.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -27,16 +47,19 @@ router.post("/login", async (req, res) => {
       .from("admin_users")
       .select("role")
       .eq("id", data.user.id)
-      .single();
+      .maybeSingle();
 
     if (adminError || !admin) {
-      console.error("Admin lookup failed:", adminError);
+      if (adminError) console.error("Admin lookup failed:", adminError);
+      
       return res.status(403).json({ 
         error: "Access denied: Not an admin user", 
+        message: "Authentication successful, but you are not registered in the admin_users table.",
         debug: {
           searchedId: data.user.id,
-          error: adminError?.message || "Record not found",
-          code: adminError?.code
+          email: data.user.email,
+          error: adminError?.message || "User record not found in admin_users table",
+          code: adminError?.code || "NOT_AN_ADMIN"
         }
       });
     }
@@ -52,7 +75,16 @@ router.post("/login", async (req, res) => {
 });
 
 /**
- * Get current admin profile
+ * @swagger
+ * /admin/me:
+ *   get:
+ *     summary: Get current admin profile
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Admin profile data
  */
 router.get("/me", requireAuth, requireAdmin, async (req, res) => {
   res.json({
@@ -63,7 +95,16 @@ router.get("/me", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * List all students (Admin Only)
+ * @swagger
+ * /admin/students:
+ *   get:
+ *     summary: List all students
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of students
  */
 router.get("/students", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -80,7 +121,16 @@ router.get("/students", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * List all subscriptions (Admin Only)
+ * @swagger
+ * /admin/subscriptions:
+ *   get:
+ *     summary: List all subscriptions
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of subscriptions
  */
 router.get("/subscriptions", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -97,7 +147,16 @@ router.get("/subscriptions", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * Content Manager: Get all subjects
+ * @swagger
+ * /admin/content/subjects:
+ *   get:
+ *     summary: Get all subjects
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of subjects
  */
 router.get("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -113,7 +172,21 @@ router.get("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * Content Manager: Get chapters for a subject
+ * @swagger
+ * /admin/content/chapters/{subjectId}:
+ *   get:
+ *     summary: Get chapters for a subject
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: subjectId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of chapters
  */
 router.get("/content/chapters/:subjectId", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -130,7 +203,20 @@ router.get("/content/chapters/:subjectId", requireAuth, requireAdmin, async (req
 });
 
 /**
- * Content Manager: List subtopics/videos with optional filters
+ * @swagger
+ * /admin/content/subtopics:
+ *   get:
+ *     summary: List subtopics/videos
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: chapter_id
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of subtopics
  */
 router.get("/content/subtopics", requireAuth, requireAdmin, async (req, res) => {
   const { chapter_id } = req.query;
@@ -159,7 +245,23 @@ router.get("/content/subtopics", requireAuth, requireAdmin, async (req, res) => 
 });
 
 /**
- * Content Manager: Create subtopic (Video)
+ * @swagger
+ * /admin/content/subtopics:
+ *   post:
+ *     summary: Create subtopic (Video)
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [chapter_id, title, sort_order]
+ *     responses:
+ *       200:
+ *         description: Created subtopic
  */
 router.post("/content/subtopics", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -177,7 +279,16 @@ router.post("/content/subtopics", requireAuth, requireAdmin, async (req, res) =>
 });
 
 /**
- * Content Manager: Get all teachers
+ * @swagger
+ * /admin/content/teachers:
+ *   get:
+ *     summary: Get all teachers
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of teachers
  */
 router.get("/content/teachers", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -190,10 +301,23 @@ router.get("/content/teachers", requireAuth, requireAdmin, async (req, res) => {
 });
 
 /**
- * Content Manager: Create Subject
- */
-/**
- * Content Manager: Create Subject
+ * @swagger
+ * /admin/content/subjects:
+ *   post:
+ *     summary: Create Subject
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [name, class, group]
+ *     responses:
+ *       200:
+ *         description: Created subject
  */
 router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -207,7 +331,27 @@ router.post("/content/subjects", requireAuth, requireAdmin, async (req, res) => 
 });
 
 /**
- * Content Manager: Update Subject
+ * @swagger
+ * /admin/content/subjects/{id}:
+ *   patch:
+ *     summary: Update Subject
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated subject
  */
 router.patch("/content/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -220,7 +364,21 @@ router.patch("/content/subjects/:id", requireAuth, requireAdmin, async (req, res
 });
 
 /**
- * Content Manager: Delete Subject
+ * @swagger
+ * /admin/content/subjects/{id}:
+ *   delete:
+ *     summary: Delete Subject
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Deleted
  */
 router.delete("/content/subjects/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -233,7 +391,23 @@ router.delete("/content/subjects/:id", requireAuth, requireAdmin, async (req, re
 });
 
 /**
- * Content Manager: Create Chapter
+ * @swagger
+ * /admin/content/chapters:
+ *   post:
+ *     summary: Create Chapter
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [subject_id, title, sort_order]
+ *     responses:
+ *       200:
+ *         description: Created chapter
  */
 router.post("/content/chapters", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -247,7 +421,27 @@ router.post("/content/chapters", requireAuth, requireAdmin, async (req, res) => 
 });
 
 /**
- * Content Manager: Update Chapter
+ * @swagger
+ * /admin/content/chapters/{id}:
+ *   patch:
+ *     summary: Update Chapter
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated chapter
  */
 router.patch("/content/chapters/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -260,8 +454,22 @@ router.patch("/content/chapters/:id", requireAuth, requireAdmin, async (req, res
 });
 
 /**
-  * Content Manager: Delete Chapter
-  */
+ * @swagger
+ * /admin/content/chapters/{id}:
+ *   delete:
+ *     summary: Delete Chapter
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Deleted
+ */
 router.delete("/content/chapters/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { error } = await supabase.from("chapters").delete().eq("id", req.params.id);
@@ -273,7 +481,27 @@ router.delete("/content/chapters/:id", requireAuth, requireAdmin, async (req, re
 });
 
 /**
- * Content Manager: Update subtopic
+ * @swagger
+ * /admin/content/subtopics/{id}:
+ *   patch:
+ *     summary: Update subtopic
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Updated subtopic
  */
 router.patch("/content/subtopics/:id", requireAuth, requireAdmin, async (req, res) => {
   try {
@@ -291,7 +519,21 @@ router.patch("/content/subtopics/:id", requireAuth, requireAdmin, async (req, re
 });
 
 /**
- * Content Manager: Delete subtopic
+ * @swagger
+ * /admin/content/subtopics/{id}:
+ *   delete:
+ *     summary: Delete subtopic
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       204:
+ *         description: Deleted
  */
 router.delete("/content/subtopics/:id", requireAuth, requireAdmin, async (req, res) => {
   try {

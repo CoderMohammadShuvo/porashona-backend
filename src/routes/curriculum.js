@@ -29,6 +29,9 @@ router.get("/:class/:group", requireAuth, async (req, res) => {
   const { class: studentClass, group } = req.params;
 
   try {
+    const classVal = parseInt(studentClass) || req.user?.class || 10;
+    const groupVal = group || req.user?.group || "Science";
+
     const { data: subjects, error } = await supabase
       .from("subjects")
       .select(`
@@ -37,8 +40,8 @@ router.get("/:class/:group", requireAuth, async (req, res) => {
           id, title, sort_order, is_free, nctb_verified
         )
       `)
-      .or(`class.eq.${studentClass},class.is.null`)
-      .or(`group.eq.${group},group.eq.All`)
+      .or(`"class".eq.${classVal},"class".is.null`)
+      .or(`"group".ilike.${groupVal},"group".ilike.All`)
       .order("sort_order");
 
     if (error) return res.status(500).json({ error: error.message });

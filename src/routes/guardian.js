@@ -4,7 +4,18 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /guardian/students — students linked to this parent phone
+/**
+ * @swagger
+ * /guardian/students:
+ *   get:
+ *     summary: Get students linked to this parent phone
+ *     tags: [Guardian]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of students
+ */
 router.get("/students", requireAuth, async (req, res) => {
   if (!req.user.phone) return res.status(200).json([]);
 
@@ -17,7 +28,23 @@ router.get("/students", requireAuth, async (req, res) => {
   res.json(data);
 });
 
-// GET /guardian/report/:studentId
+/**
+ * @swagger
+ * /guardian/report/{studentId}:
+ *   get:
+ *     summary: Get progress report for a student
+ *     tags: [Guardian]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: studentId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: Student progress report
+ */
 router.get("/report/:studentId", requireAuth, async (req, res) => {
   const { studentId } = req.params;
 

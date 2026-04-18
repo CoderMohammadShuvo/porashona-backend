@@ -4,7 +4,18 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /subscription/status
+/**
+ * @swagger
+ * /subscription/status:
+ *   get:
+ *     summary: Get current user subscription status
+ *     tags: [Subscription]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Subscription details
+ */
 router.get("/status", requireAuth, async (req, res) => {
   const { data, error } = await supabase
     .from('subscriptions')

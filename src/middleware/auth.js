@@ -75,7 +75,7 @@ export async function requireAdmin(req, res, next) {
     .from("admin_users")
     .select("role")
     .eq("id", req.user.id)
-    .single();
+    .maybeSingle();
 
   if (!admin) {
     return res.status(403).json({ error: "Admin access required" });

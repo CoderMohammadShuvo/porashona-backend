@@ -7,7 +7,27 @@ import { requireAuth, requirePro } from "../middleware/auth.js";
 const router = Router();
 const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
 
-// POST /ocr/solve
+/**
+ * @swagger
+ * /ocr/solve:
+ *   post:
+ *     summary: Solve academic problem from image
+ *     tags: [OCR]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               image:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Solution to the problem
+ */
 router.post("/solve", requireAuth, requirePro, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No image provided" });
 

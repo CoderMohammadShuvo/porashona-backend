@@ -44,7 +44,30 @@ async function checkDailyLimit(userId, isPro) {
   return { allowed: true, current: current + 1, limit };
 }
 
-// POST /chat/send — main AI chat endpoint with streaming
+/**
+ * @swagger
+ * /chat/send:
+ *   post:
+ *     summary: Send message to AI teacher
+ *     tags: [Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [teacher_id, message]
+ *             properties:
+ *               teacher_id: { type: string }
+ *               message: { type: string }
+ *               context: { type: string }
+ *               history: { type: array, items: { type: object } }
+ *     responses:
+ *       200:
+ *         description: Streaming response
+ */
 router.post("/send", requireAuth, chatLimiter, async (req, res) => {
   const { teacher_id, message, context, history = [] } = req.body;
 
@@ -154,7 +177,23 @@ router.post("/send", requireAuth, chatLimiter, async (req, res) => {
   }
 });
 
-// GET /chat/history/:teacherId — last 20 messages with a teacher
+/**
+ * @swagger
+ * /chat/history/{teacherId}:
+ *   get:
+ *     summary: Get chat history with a teacher
+ *     tags: [Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: teacherId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: List of messages
+ */
 router.get("/history/:teacherId", requireAuth, async (req, res) => {
   const { teacherId } = req.params;
 
@@ -171,7 +210,18 @@ router.get("/history/:teacherId", requireAuth, async (req, res) => {
   res.json((data || []).reverse()); // chronological order
 });
 
-// GET /chat/daily-usage — how many questions used today
+/**
+ * @swagger
+ * /chat/daily-usage:
+ *   get:
+ *     summary: Get daily AI usage
+ *     tags: [Chat]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Usage statistics
+ */
 router.get("/daily-usage", requireAuth, async (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 

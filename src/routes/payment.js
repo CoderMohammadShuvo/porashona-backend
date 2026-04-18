@@ -5,7 +5,27 @@ import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
 
-// POST /payment/initiate
+/**
+ * @swagger
+ * /payment/initiate:
+ *   post:
+ *     summary: Initiate a subscription payment
+ *     tags: [Payment]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [plan_id]
+ *             properties:
+ *               plan_id: { type: string, example: "monthly_basic" }
+ *     responses:
+ *       200:
+ *         description: Payment initiation response with redirect URL
+ */
 router.post("/initiate", requireAuth, async (req, res) => {
   const { plan_id } = req.body;
   
@@ -40,7 +60,21 @@ router.post("/initiate", requireAuth, async (req, res) => {
   }
 });
 
-// POST /payment/verify (SSLCommerz Webhook)
+/**
+ * @swagger
+ * /payment/verify:
+ *   post:
+ *     summary: SSLCommerz Payment Verification Webhook
+ *     tags: [Payment]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       302:
+ *         description: Redirects to frontend
+ */
 router.post("/verify", async (req, res) => {
   const { tran_id, status, amount, pay_status } = req.body;
 

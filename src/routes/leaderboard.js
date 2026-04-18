@@ -4,7 +4,18 @@ import { requireAuth } from "../middleware/auth.js";
 
 const router = Router();
 
-// GET /leaderboard
+/**
+ * @swagger
+ * /leaderboard:
+ *   get:
+ *     summary: Get global leaderboard
+ *     tags: [Leaderboard]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Leaderboard data
+ */
 router.get("/", requireAuth, async (req, res) => {
   try {
     // Top 50 by XP
