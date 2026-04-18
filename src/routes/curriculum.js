@@ -202,6 +202,7 @@ router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
       .from("chapters")
       .select(`
         *,
+        subject:subjects(*),
         subtopics (
           id, title, sort_order, video_url_free, video_url_paid,
           youtube_video_id, duration_seconds, is_published, notes_text, is_free
