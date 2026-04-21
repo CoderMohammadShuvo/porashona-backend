@@ -18,6 +18,10 @@ const router = Router();
  *         required: true
  *         schema: { type: string }
  *         description: UUID of the chapter
+ *       - in: query
+ *         name: isExam
+ *         schema: { type: boolean }
+ *         description: Filter for exams vs regular quizzes
  *     responses:
  *       200:
  *         description: Quiz details with questions
@@ -25,12 +29,22 @@ const router = Router();
  *         description: No quiz found
  */
 router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
+  const { isExam } = req.query;
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("quizzes")
       .select("*, questions(*)")
-      .eq("chapter_id", req.params.chapterId)
-      .maybeSingle();
+      .eq("chapter_id", req.params.chapterId);
+    
+    if (isExam !== undefined) {
+      query = query.eq("is_exam", isExam === "true");
+    } else {
+      // Default to non-exam if not specified? 
+      // Actually, if we want both, maybe we should just return what's available.
+      // But usually UI asks for one specific type.
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(404).json({ error: "No quiz found for this chapter" });
@@ -55,6 +69,10 @@ router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
  *         required: true
  *         schema: { type: string }
  *         description: UUID of the subtopic
+ *       - in: query
+ *         name: isExam
+ *         schema: { type: boolean }
+ *         description: Filter for exams vs regular quizzes
  *     responses:
  *       200:
  *         description: Quiz details with questions
@@ -62,14 +80,20 @@ router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
  *         description: No quiz found
  */
 router.get("/subtopic/:subtopicId", authMiddleware, async (req, res) => {
+  const { isExam } = req.query;
   try {
-    console.log(`Fetching quiz for subtopic: ${req.params.subtopicId} by user: ${req.user.id}`);
+    console.log(`Fetching quiz for subtopic: ${req.params.subtopicId} by user: ${req.user.id}, isExam: ${isExam}`);
     
-    const { data, error } = await supabase
+    let query = supabase
       .from("quizzes")
       .select("*, questions(*)")
-      .eq("subtopic_id", req.params.subtopicId)
-      .maybeSingle();
+      .eq("subtopic_id", req.params.subtopicId);
+
+    if (isExam !== undefined) {
+      query = query.eq("is_exam", isExam === "true");
+    }
+
+    const { data, error } = await query.maybeSingle();
 
     if (error) {
        console.error(`Error fetching quiz for subtopic ${req.params.subtopicId}:`, error);
@@ -80,7 +104,7 @@ router.get("/subtopic/:subtopicId", authMiddleware, async (req, res) => {
       console.warn(`No quiz found for subtopic: ${req.params.subtopicId}`);
       return res.status(404).json({ 
         error: "No quiz found for this subtopic",
-        debug: { requestedSubtopicId: req.params.subtopicId }
+        debug: { requestedSubtopicId: req.params.subtopicId, isExam }
       });
     }
 
@@ -167,6 +191,7 @@ router.post("/submit", authMiddleware, async (req, res) => {
       total_questions: totalQuestions,
       time_taken_seconds: timeTaken || 0,
       xp_earned: xpEarned,
+      is_exam_attempt: quiz.is_exam, // Mark if this was an exam attempt
       completed_at: new Date().toISOString(),
     };
 
@@ -231,6 +256,10 @@ router.post("/submit", authMiddleware, async (req, res) => {
  *               subtopic_id: { type: string }
  *               title: { type: string }
  *               description: { type: string }
+ *               is_exam: { type: boolean }
+ *               time_limit_seconds: { type: integer }
+ *               passing_score: { type: integer }
+ *               max_attempts: { type: integer }
  *               questions:
  *                 type: array
  *                 items:
@@ -245,7 +274,10 @@ router.post("/submit", authMiddleware, async (req, res) => {
  *         description: Quiz saved successfully
  */
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  const { id, chapter_id, subtopic_id, title, description, questions } = req.body;
+  const { 
+    id, chapter_id, subtopic_id, title, description, questions, 
+    is_exam, time_limit_seconds, passing_score, max_attempts 
+  } = req.body;
 
   // 1. Sanitize IDs (convert empty strings to null)
   const targetChapter = chapter_id || null;
@@ -266,7 +298,11 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       chapter_id: targetChapter, 
       subtopic_id: targetSubtopic, 
       title, 
-      description 
+      description,
+      is_exam: is_exam || false,
+      time_limit_seconds: time_limit_seconds || null,
+      passing_score: passing_score || 0,
+      max_attempts: max_attempts || null
     };
     if (id) {
       const { error } = await supabase.from("quizzes").update(quizPayload).eq("id", id);

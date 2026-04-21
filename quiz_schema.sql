@@ -9,6 +9,8 @@ CREATE TABLE quizzes (
   description TEXT,
   passing_score INTEGER DEFAULT 0,
   max_attempts INTEGER,
+  is_exam BOOLEAN DEFAULT FALSE,
+  time_limit_seconds INTEGER,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   CONSTRAINT one_target CHECK (
     (chapter_id IS NOT NULL AND subtopic_id IS NULL) OR 
@@ -39,6 +41,7 @@ CREATE TABLE quiz_attempts (
   total_questions INTEGER NOT NULL,
   time_taken_seconds INTEGER,
   xp_earned INTEGER DEFAULT 0,
+  is_exam_attempt BOOLEAN DEFAULT FALSE,
   completed_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
