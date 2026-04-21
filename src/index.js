@@ -17,6 +17,8 @@ import leaderboardRoutes from "./routes/leaderboard.js";
 import progressRoutes from "./routes/progress.js";
 import subscriptionRoutes from "./routes/subscription.js";
 import adminRoutes from "./routes/admin.js";
+import quizRoutes from "./routes/quiz.js";
+
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -102,6 +104,8 @@ app.use("/leaderboard", leaderboardRoutes);
 app.use("/progress", progressRoutes);
 app.use("/subscription", subscriptionRoutes);
 app.use("/admin", adminRoutes);
+app.use("/quiz", quizRoutes);
+
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🎓 Porashona Backend running on port ${PORT}`);
