@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { requireAuth, requirePro } from "../middleware/auth.js";
+import { authMiddleware, requirePro } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -20,7 +20,7 @@ const router = Router();
  *       200:
  *         description: Video URL
  */
-router.get("/paid/:youtubeVideoId", requireAuth, requirePro, async (req, res) => {
+router.get("/paid/:youtubeVideoId", authMiddleware, requirePro, async (req, res) => {
   const { youtubeVideoId } = req.params;
 
   res.json({ url: `https://www.youtube.com/embed/${youtubeVideoId}` });
@@ -43,7 +43,7 @@ router.get("/paid/:youtubeVideoId", requireAuth, requirePro, async (req, res) =>
  *       200:
  *         description: Video URL
  */
-router.get("/free/:subtopicId", requireAuth, async (req, res) => {
+router.get("/free/:subtopicId", authMiddleware, async (req, res) => {
   const { subtopicId } = req.params;
   // This would normally fetch from DB subtopics table
   res.json({ 

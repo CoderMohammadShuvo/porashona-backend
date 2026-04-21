@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -20,7 +20,7 @@ const router = Router();
  *       200:
  *         description: List of subjects
  */
-router.get("/subjects", requireAuth, async (req, res) => {
+router.get("/subjects", authMiddleware, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("subjects")
@@ -53,7 +53,7 @@ router.get("/subjects", requireAuth, async (req, res) => {
  *       404:
  *         description: Subject not found
  */
-router.get("/subject/:subjectId", requireAuth, async (req, res) => {
+router.get("/subject/:subjectId", authMiddleware, async (req, res) => {
   const { subjectId } = req.params;
 
   try {
@@ -110,7 +110,7 @@ router.get("/subject/:subjectId", requireAuth, async (req, res) => {
  *       404:
  *         description: Subject not found
  */
-router.get("/chapters/:subjectId", requireAuth, async (req, res) => {
+router.get("/chapters/:subjectId", authMiddleware, async (req, res) => {
   const { subjectId } = req.params;
 
   try {
@@ -194,7 +194,7 @@ router.get("/chapters/:subjectId", requireAuth, async (req, res) => {
  *       404:
  *         description: Chapter not found
  */
-router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
+router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
   const { chapterId } = req.params;
 
   try {
@@ -265,7 +265,7 @@ router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
  *       200:
  *         description: List of subjects with chapters
  */
-router.get("/:class/:group", requireAuth, async (req, res) => {
+router.get("/:class/:group", authMiddleware, async (req, res) => {
   const { class: studentClass, group } = req.params;
 
   try {

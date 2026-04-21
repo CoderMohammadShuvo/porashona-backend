@@ -2,7 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import { supabase } from "../lib/supabase.js";
 import { anthropic, CLAUDE_MODEL } from "../lib/claude.js";
-import { requireAuth, requirePro } from "../middleware/auth.js";
+import { authMiddleware, requirePro } from "../middleware/auth.js";
 
 const router = Router();
 const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
@@ -28,7 +28,7 @@ const upload = multer({ limits: { fileSize: 5 * 1024 * 1024 } }); // 5MB
  *       200:
  *         description: Solution to the problem
  */
-router.post("/solve", requireAuth, requirePro, upload.single('image'), async (req, res) => {
+router.post("/solve", authMiddleware, requirePro, upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: "No image provided" });
 
   try {

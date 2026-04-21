@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 import { v4 as uuidv4 } from 'uuid';
 
 const router = Router();
@@ -26,7 +26,7 @@ const router = Router();
  *       200:
  *         description: Payment initiation response with redirect URL
  */
-router.post("/initiate", requireAuth, async (req, res) => {
+router.post("/initiate", authMiddleware, async (req, res) => {
   const { plan_id } = req.body;
   
   if (!plan_id) return res.status(400).json({ error: "plan_id is required" });

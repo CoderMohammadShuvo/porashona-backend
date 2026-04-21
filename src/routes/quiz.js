@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -24,7 +24,7 @@ const router = Router();
  *       404:
  *         description: No quiz found
  */
-router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
+router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("quizzes")
@@ -61,16 +61,28 @@ router.get("/chapter/:chapterId", requireAuth, async (req, res) => {
  *       404:
  *         description: No quiz found
  */
-router.get("/subtopic/:subtopicId", requireAuth, async (req, res) => {
+router.get("/subtopic/:subtopicId", authMiddleware, async (req, res) => {
   try {
+    console.log(`Fetching quiz for subtopic: ${req.params.subtopicId} by user: ${req.user.id}`);
+    
     const { data, error } = await supabase
       .from("quizzes")
       .select("*, questions(*)")
       .eq("subtopic_id", req.params.subtopicId)
       .maybeSingle();
 
-    if (error) throw error;
-    if (!data) return res.status(404).json({ error: "No quiz found for this subtopic" });
+    if (error) {
+       console.error(`Error fetching quiz for subtopic ${req.params.subtopicId}:`, error);
+       throw error;
+    }
+
+    if (!data) {
+      console.warn(`No quiz found for subtopic: ${req.params.subtopicId}`);
+      return res.status(404).json({ 
+        error: "No quiz found for this subtopic",
+        debug: { requestedSubtopicId: req.params.subtopicId }
+      });
+    }
 
     res.json(data);
   } catch (err) {
@@ -115,7 +127,7 @@ router.get("/subtopic/:subtopicId", requireAuth, async (req, res) => {
  *                 xpEarned: { type: integer }
  *                 attemptId: { type: string }
  */
-router.post("/submit", requireAuth, async (req, res) => {
+router.post("/submit", authMiddleware, async (req, res) => {
   const { quizId, answers, timeTaken } = req.body;
 
   try {
@@ -232,7 +244,7 @@ router.post("/submit", requireAuth, async (req, res) => {
  *       200:
  *         description: Quiz saved successfully
  */
-router.post("/", requireAuth, requireAdmin, async (req, res) => {
+router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
   const { id, chapter_id, subtopic_id, title, description, questions } = req.body;
 
   // 1. Sanitize IDs (convert empty strings to null)
@@ -303,7 +315,7 @@ router.post("/", requireAuth, requireAdmin, async (req, res) => {
  *       200:
  *         description: List of user's past quiz attempts
  */
-router.get("/attempts/me", requireAuth, async (req, res) => {
+router.get("/attempts/me", authMiddleware, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from("quiz_attempts")

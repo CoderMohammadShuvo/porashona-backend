@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -16,7 +16,7 @@ const router = Router();
  *       200:
  *         description: Leaderboard data
  */
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", authMiddleware, async (req, res) => {
   try {
     // Top 50 by XP
     const { data: topStudents, error } = await supabase

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -16,7 +16,7 @@ const router = Router();
  *       200:
  *         description: List of students
  */
-router.get("/students", requireAuth, async (req, res) => {
+router.get("/students", authMiddleware, async (req, res) => {
   if (!req.user.phone) return res.status(200).json([]);
 
   const { data, error } = await supabase
@@ -45,7 +45,7 @@ router.get("/students", requireAuth, async (req, res) => {
  *       200:
  *         description: Student progress report
  */
-router.get("/report/:studentId", requireAuth, async (req, res) => {
+router.get("/report/:studentId", authMiddleware, async (req, res) => {
   const { studentId } = req.params;
 
   // Verify guardian link

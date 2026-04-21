@@ -59,17 +59,23 @@ app.use(helmet({
 }));
 // Robust CORS for Production
 app.use(cors({
-  origin: (origin, callback) => {
+  origin: function (origin, callback) {
     const allowedOrigins = [
       "http://localhost:8080",
       "http://localhost:8081",
       "https://porashona-pied.vercel.app"
     ];
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
-      callback(null, true);
-    } else {
-      callback(null, true);
+
+    if (!origin) return callback(null, true);
+
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app")
+    ) {
+      return callback(null, true);
     }
+
+    return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
 }));

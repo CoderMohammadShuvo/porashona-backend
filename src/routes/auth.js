@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -197,7 +197,7 @@ router.post("/login", async (req, res) => {
  *       200:
  *         description: Logout successful
  */
-router.post("/logout", requireAuth, async (req, res) => {
+router.post("/logout", authMiddleware, async (req, res) => {
   try {
     const token = req.headers.authorization?.slice(7);
     await supabase.auth.admin.signOut(token);
@@ -219,7 +219,7 @@ router.post("/logout", requireAuth, async (req, res) => {
  *       200:
  *         description: Profile data
  */
-router.get("/me", requireAuth, async (req, res) => {
+router.get("/me", authMiddleware, async (req, res) => {
   try {
     const { data: profile } = await supabase
       .from("users")

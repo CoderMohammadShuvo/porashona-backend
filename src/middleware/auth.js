@@ -71,16 +71,33 @@ export async function requirePro(req, res, next) {
 export async function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "Not authenticated" });
 
-  const { data: admin } = await supabase
+  const { data: admin, error: adminError } = await supabase
     .from("admin_users")
     .select("role")
     .eq("id", req.user.id)
     .maybeSingle();
 
-  if (!admin) {
-    return res.status(403).json({ error: "Admin access required" });
+  if (adminError || !admin) {
+    console.warn(`Admin access denied for user ${req.user.id} (${req.user.email})`);
+    if (adminError) console.error("Admin check error:", adminError);
+
+    return res.status(403).json({ 
+      error: "Access denied: Admin privileges required",
+      debug: {
+        userId: req.user.id,
+        email: req.user.email,
+        table: "admin_users",
+        reason: adminError ? "db_error" : "not_found_in_table",
+        db_message: adminError?.message
+      }
+    });
   }
 
   req.adminRole = admin.role;
   next();
 }
+
+// Aliases for consistency with current route imports
+export const authMiddleware = requireAuth;
+export const adminMiddleware = requireAdmin;
+export const proMiddleware = requirePro;

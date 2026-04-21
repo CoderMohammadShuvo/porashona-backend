@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -27,7 +27,7 @@ const router = Router();
  *       200:
  *         description: Progress updated
  */
-router.post("/video", requireAuth, async (req, res) => {
+router.post("/video", authMiddleware, async (req, res) => {
   const { subtopic_id, watched_seconds, completed } = req.body;
 
   if (!subtopic_id) return res.status(400).json({ error: "subtopic_id is required" });
@@ -80,7 +80,7 @@ router.post("/video", requireAuth, async (req, res) => {
  *       200:
  *         description: List of user progress records
  */
-router.get("/user", requireAuth, async (req, res) => {
+router.get("/user", authMiddleware, async (req, res) => {
   const { data, error } = await supabase
     .from('video_progress')
     .select('*')

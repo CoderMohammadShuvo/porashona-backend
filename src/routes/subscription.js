@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -16,7 +16,7 @@ const router = Router();
  *       200:
  *         description: Subscription details
  */
-router.get("/status", requireAuth, async (req, res) => {
+router.get("/status", authMiddleware, async (req, res) => {
   const { data, error } = await supabase
     .from('subscriptions')
     .select('*')

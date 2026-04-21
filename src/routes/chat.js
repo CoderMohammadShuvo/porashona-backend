@@ -2,7 +2,7 @@ import { Router } from "express";
 import rateLimit from "express-rate-limit";
 import { supabase } from "../lib/supabase.js";
 import { anthropic, CLAUDE_MODEL, defaultTeacherPrompt } from "../lib/claude.js";
-import { requireAuth } from "../middleware/auth.js";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
 
@@ -68,7 +68,7 @@ async function checkDailyLimit(userId, isPro) {
  *       200:
  *         description: Streaming response
  */
-router.post("/send", requireAuth, chatLimiter, async (req, res) => {
+router.post("/send", authMiddleware, chatLimiter, async (req, res) => {
   const { teacher_id, message, context, history = [] } = req.body;
 
   if (!teacher_id || !message?.trim()) {
@@ -194,7 +194,7 @@ router.post("/send", requireAuth, chatLimiter, async (req, res) => {
  *       200:
  *         description: List of messages
  */
-router.get("/history/:teacherId", requireAuth, async (req, res) => {
+router.get("/history/:teacherId", authMiddleware, async (req, res) => {
   const { teacherId } = req.params;
 
   const { data, error } = await supabase
@@ -222,7 +222,7 @@ router.get("/history/:teacherId", requireAuth, async (req, res) => {
  *       200:
  *         description: Usage statistics
  */
-router.get("/daily-usage", requireAuth, async (req, res) => {
+router.get("/daily-usage", authMiddleware, async (req, res) => {
   const today = new Date().toISOString().split("T")[0];
 
   const { data: sub } = await supabase
