@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { supabase } from "../lib/supabase.js";
+import { supabase, supabaseAnon } from "../lib/supabase.js";
 import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
@@ -149,17 +149,18 @@ router.post("/login", async (req, res) => {
   }
 
   try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    // Use the anon client for user authentication
+    const { data, error } = await supabaseAnon.auth.signInWithPassword({ email, password });
 
     if (error) return res.status(401).json({ error: error.message });
 
-    // Update last_active_date and streak
+    // Update last_active_date and streak using the service role client (bypassing RLS)
     const today = new Date().toISOString().split("T")[0];
     const { data: user } = await supabase
       .from("users")
       .select("last_active_date, streak")
       .eq("id", data.user.id)
-      .single();
+      .maybeSingle();
 
     let newStreak = user?.streak || 0;
     if (user?.last_active_date) {
@@ -181,6 +182,7 @@ router.post("/login", async (req, res) => {
       user: { ...data.user, streak: newStreak },
     });
   } catch (err) {
+    console.error("Login Error:", err);
     res.status(500).json({ error: "Login failed" });
   }
 });
