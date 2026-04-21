@@ -235,11 +235,27 @@ router.post("/submit", requireAuth, async (req, res) => {
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
   const { id, chapter_id, subtopic_id, title, description, questions } = req.body;
 
+  // 1. Sanitize IDs (convert empty strings to null)
+  const targetChapter = chapter_id || null;
+  const targetSubtopic = subtopic_id || null;
+
+  // 2. Validate "one_target" constraint
+  if ((targetChapter && targetSubtopic) || (!targetChapter && !targetSubtopic)) {
+    return res.status(400).json({ 
+      error: "A quiz must be linked to EXACTLY one target: either a chapter or a subtopic." 
+    });
+  }
+
   try {
     let quizId = id;
 
-    // 1. Upsert Quiz
-    const quizPayload = { chapter_id, subtopic_id, title, description };
+    // 3. Upsert Quiz
+    const quizPayload = { 
+      chapter_id: targetChapter, 
+      subtopic_id: targetSubtopic, 
+      title, 
+      description 
+    };
     if (id) {
       const { error } = await supabase.from("quizzes").update(quizPayload).eq("id", id);
       if (error) throw error;
