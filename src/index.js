@@ -58,21 +58,14 @@ app.use(helmet({
   contentSecurityPolicy: false, // Disable CSP for Swagger UI
 }));
 // Robust CORS for Production
-const allowedOrigins = [
-  "http://localhost:8080",
-  "http://localhost:8081",
-  "https://porashona-pied.vercel.app"
-];
-
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".vercel.app")) {
-      callback(null, true);
-    } else {
-      callback(null, true); // DO NOT BLOCK
-    }
+    // Allow all origins for development, including mobile apps and local tools (where origin is undefined)
+    callback(null, true);
   },
   credentials: true,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 // ─── Body parsing ────────────────────────────────────────
