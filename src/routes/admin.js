@@ -94,22 +94,10 @@ router.get("/me", requireAuth, requireAdmin, async (req, res) => {
   });
 });
 
-/**
- * @swagger
- * /admin/students:
- *   get:
- *     summary: List all students
- *     tags: [Admin]
- *     security:
- *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of students
- */
 router.get("/students", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data: students, error } = await supabase
-      .from("users")
+      .from("profiles")
       .select("*")
       .order("created_at", { ascending: false });
 
@@ -118,6 +106,71 @@ router.get("/students", requireAuth, requireAdmin, async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: "Failed to fetch students" });
   }
+});
+
+/**
+ * @swagger
+ * /admin/students/{id}:
+ *   get:
+ *     summary: Get detailed student profile
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/students/:id", requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const [profile, progress, quizzes, subscriptions, chats] = await Promise.all([
+        supabase.from('profiles').select('*').eq('id', id).single(),
+        supabase.from('user_progress').select('*').eq('user_id', id),
+        supabase.from('quiz_attempts').select('*, quizzes(title)').eq('user_id', id),
+        supabase.from('subscriptions').select('*').eq('user_id', id).order('created_at', { ascending: false }),
+        supabase.from('chat_history').select('*').eq('user_id', id).order('created_at', { ascending: false }).limit(50)
+    ]);
+
+    res.json({
+        profile: profile.data,
+        progress: progress.data,
+        quizzes: quizzes.data,
+        subscriptions: subscriptions.data,
+        chats: chats.data
+    });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to fetch student details" });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/students/{id}/upgrade:
+ *   post:
+ *     summary: Manually upgrade student to Pro
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post("/students/:id/upgrade", requireAuth, requireAdmin, async (req, res) => {
+    const { id } = req.params;
+    const { plan_id, duration_months = 1 } = req.body;
+
+    const expires_at = new Date();
+    expires_at.setMonth(expires_at.getMonth() + duration_months);
+
+    try {
+        const { error } = await supabase.from('subscriptions').insert([{
+            user_id: id,
+            plan_id: plan_id || 'admin_manual_pro',
+            status: 'active',
+            payment_reference: `ADMIN_MANUAL_${uuidv4().substring(0,6)}`,
+            amount_paid: 0,
+            expires_at: expires_at.toISOString()
+        }]);
+
+        if (error) throw error;
+        res.json({ success: true, expires_at });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
 /**
@@ -136,7 +189,7 @@ router.get("/subscriptions", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data: subs, error } = await supabase
       .from("subscriptions")
-      .select("*, users(name, email)")
+      .select("*, users:profiles(name, email)")
       .order("created_at", { ascending: false });
 
     if (error) throw error;

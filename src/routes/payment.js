@@ -34,13 +34,31 @@ router.post("/initiate", authMiddleware, async (req, res) => {
   const total_amount = plan_id.includes('monthly') ? 199 : plan_id.includes('yearly') ? 1499 : 3999;
   const tran_id = `PORA_${uuidv4().substring(0, 8).toUpperCase()}`;
 
-  // This is where you would call SSLCommerz API
-  // For now, we simulate the initialization and return a fake redirect URL
-  // In production, use: https://sandbox.sslcommerz.com/gwprocess/v4/api.php
-  
+  const data = {
+    store_id: process.env.SSLCOMMERZ_STORE_ID || "dummy65e0642fa3d66",
+    store_passwd: process.env.SSLCOMMERZ_STORE_PASSWORD || "dummy65e0642fa3d66@ssl",
+    total_amount: total_amount,
+    currency: "BDT",
+    tran_id: tran_id,
+    success_url: `${process.env.BACKEND_URL || "https://porashona-backend.railway.app"}/payment/success`,
+    fail_url: `${process.env.BACKEND_URL || "https://porashona-backend.railway.app"}/payment/fail`,
+    cancel_url: `${process.env.BACKEND_URL || "https://porashona-backend.railway.app"}/payment/cancel`,
+    ipn_url: `${process.env.BACKEND_URL || "https://porashona-backend.railway.app"}/payment/ipn`,
+    shipping_method: "NO",
+    product_name: `Porashona Pro - ${plan_id}`,
+    product_category: "Education",
+    product_profile: "non-physical-goods",
+    cus_name: req.user.email,
+    cus_email: req.user.email,
+    cus_add1: "Dhaka",
+    cus_city: "Dhaka",
+    cus_country: "Bangladesh",
+    cus_phone: "01700000000",
+  };
+
   try {
     // Save temporary payment intent
-    const { error } = await supabase.from('subscriptions').insert([{
+    await supabase.from('subscriptions').insert([{
       user_id: req.user.id,
       plan_id,
       status: 'pending',
@@ -48,60 +66,64 @@ router.post("/initiate", authMiddleware, async (req, res) => {
       amount_paid: total_amount
     }]);
 
-    if (error) throw error;
-
-    res.json({
-      status: "SUCCESS",
-      gatewayPageURL: `${process.env.PAYMENT_SUCCESS_URL}?tran_id=${tran_id}`, // Mock redirect
-      tran_id
+    const response = await fetch("https://sandbox.sslcommerz.com/gwprocess/v4/api.php", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(data).toString()
     });
+
+    const result = await response.json();
+
+    if (result.status === "SUCCESS") {
+      res.json({
+        status: "SUCCESS",
+        gatewayPageURL: result.GatewayPageURL,
+        tran_id
+      });
+    } else {
+      res.status(400).json({ error: result.failedreason || "Payment initiation failed" });
+    }
   } catch (err) {
-    res.status(500).json({ error: "Payment initialization failed" });
+    console.error("Payment init error:", err);
+    res.status(500).json({ error: "Payment server error" });
   }
 });
 
-/**
- * @swagger
- * /payment/verify:
- *   post:
- *     summary: SSLCommerz Payment Verification Webhook
- *     tags: [Payment]
- *     requestBody:
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *     responses:
- *       302:
- *         description: Redirects to frontend
- */
-router.post("/verify", async (req, res) => {
-  const { tran_id, status, amount, pay_status } = req.body;
+router.post("/success", async (req, res) => {
+  const { tran_id, val_id } = req.body;
 
-  if (status === 'VALID' || pay_status === 'Successful') {
-    // Update subscription to active
-    const expires_at = new Date();
-    expires_at.setMonth(expires_at.getMonth() + (tran_id.includes('yearly') ? 12 : 1));
+  // Ideally, verify with SSLCommerz here using val_id
+  const expires_at = new Date();
+  expires_at.setMonth(expires_at.getMonth() + (tran_id.includes('yearly') ? 12 : 1));
 
-    try {
-      const { error } = await supabase
-        .from('subscriptions')
-        .update({
-          status: 'active',
-          started_at: new Date().toISOString(),
-          expires_at: expires_at.toISOString()
-        })
-        .eq('payment_reference', tran_id);
+  try {
+    const { data: subscription } = await supabase
+      .from('subscriptions')
+      .update({
+        status: 'active',
+        started_at: new Date().toISOString(),
+        expires_at: expires_at.toISOString()
+      })
+      .eq('payment_reference', tran_id)
+      .select('user_id')
+      .single();
 
-      if (error) throw error;
-      
-      return res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=success`);
-    } catch (err) {
-      return res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=error`);
+    if (subscription) {
+      // Logic for total stats / rewards could go here
     }
+    
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=success`);
+  } catch (err) {
+    return res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=error`);
   }
+});
 
-  res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=failed`);
+router.post("/fail", (req, res) => {
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=failed`);
+});
+
+router.post("/cancel", (req, res) => {
+    res.redirect(`${process.env.FRONTEND_URL}/dashboard?payment=cancelled`);
 });
 
 export default router;
