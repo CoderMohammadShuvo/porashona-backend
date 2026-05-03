@@ -31,20 +31,18 @@ const router = Router();
 router.get("/chapter/:chapterId", authMiddleware, async (req, res) => {
   const { isExam } = req.query;
   try {
-    let query = supabase
+    // Filter by is_exam (default to false if not specified)
+    // This prevents PGRST116 errors when both a practice quiz and an exam exist
+    const isExamBool = isExam === "true";
+    
+    const { data, error } = await supabase
       .from("quizzes")
       .select("*, questions(*)")
-      .eq("chapter_id", req.params.chapterId);
-    
-    if (isExam !== undefined) {
-      query = query.eq("is_exam", isExam === "true");
-    } else {
-      // Default to non-exam if not specified? 
-      // Actually, if we want both, maybe we should just return what's available.
-      // But usually UI asks for one specific type.
-    }
-
-    const { data, error } = await query.maybeSingle();
+      .eq("chapter_id", req.params.chapterId)
+      .eq("is_exam", isExamBool)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error) throw error;
     if (!data) return res.status(404).json({ error: "No quiz found for this chapter" });
@@ -84,16 +82,18 @@ router.get("/subtopic/:subtopicId", authMiddleware, async (req, res) => {
   try {
     console.log(`Fetching quiz for subtopic: ${req.params.subtopicId} by user: ${req.user.id}, isExam: ${isExam}`);
     
-    let query = supabase
+    // Filter by is_exam (default to false if not specified)
+    // This prevents PGRST116 errors when both a practice quiz and an exam exist
+    const isExamBool = isExam === "true";
+
+    const { data, error } = await supabase
       .from("quizzes")
       .select("*, questions(*)")
-      .eq("subtopic_id", req.params.subtopicId);
-
-    if (isExam !== undefined) {
-      query = query.eq("is_exam", isExam === "true");
-    }
-
-    const { data, error } = await query.maybeSingle();
+      .eq("subtopic_id", req.params.subtopicId)
+      .eq("is_exam", isExamBool)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
     if (error) {
        console.error(`Error fetching quiz for subtopic ${req.params.subtopicId}:`, error);

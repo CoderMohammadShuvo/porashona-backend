@@ -97,7 +97,7 @@ router.get("/me", requireAuth, requireAdmin, async (req, res) => {
 router.get("/students", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data: students, error } = await supabase
-      .from("profiles")
+      .from("users")
       .select("*")
       .order("created_at", { ascending: false });
 
@@ -121,7 +121,7 @@ router.get("/students/:id", requireAuth, requireAdmin, async (req, res) => {
   const { id } = req.params;
   try {
     const [profile, progress, quizzes, subscriptions, chats] = await Promise.all([
-        supabase.from('profiles').select('*').eq('id', id).single(),
+        supabase.from('users').select('*').eq('id', id).single(),
         supabase.from('user_progress').select('*').eq('user_id', id),
         supabase.from('quiz_attempts').select('*, quizzes(title)').eq('user_id', id),
         supabase.from('subscriptions').select('*').eq('user_id', id).order('created_at', { ascending: false }),
@@ -189,7 +189,7 @@ router.get("/subscriptions", requireAuth, requireAdmin, async (req, res) => {
   try {
     const { data: subs, error } = await supabase
       .from("subscriptions")
-      .select("*, users:profiles(name, email)")
+      .select("*, users(name, email)")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -598,6 +598,96 @@ router.delete("/content/subtopics/:id", requireAuth, requireAdmin, async (req, r
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/content/teachers/stats:
+ *   get:
+ *     summary: Get AI usage stats per teacher
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/content/teachers/stats", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    // Current month stats
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from("ai_chat_logs")
+      .select("teacher_id, tokens_used")
+      .gte("created_at", startOfMonth.toISOString());
+
+    if (error) throw error;
+
+    // Aggregate by teacher
+    const stats = data.reduce((acc, log) => {
+      acc[log.teacher_id] = (acc[log.teacher_id] || 0) + (log.tokens_used || 0);
+      return acc;
+    }, {});
+
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /admin/content/teachers/{id}:
+ *   patch:
+ *     summary: Update Teacher persona
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch("/content/teachers/:id", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("teachers")
+      .update(req.body)
+      .eq("id", req.params.id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+import { callOpenRouter } from "../lib/aiProvider.js";
+
+/**
+ * @swagger
+ * /admin/content/teachers/test:
+ *   post:
+ *     summary: Test AI response with a specific system prompt
+ *     tags: [Admin Content]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post("/content/teachers/test", requireAuth, requireAdmin, async (req, res) => {
+  const { system_prompt, message } = req.body;
+  
+  if (!system_prompt || !message) {
+    return res.status(400).json({ error: "system_prompt and message are required" });
+  }
+
+  try {
+    const result = await callOpenRouter(
+      system_prompt,
+      [{ role: "user", content: message }],
+      { temperature: 0.5, max_tokens: 500 }
+    );
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: "AI Test failed: " + err.message });
   }
 });
 
