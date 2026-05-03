@@ -6,11 +6,20 @@ import { supabase } from "../lib/supabase.js";
  */
 export async function requireAuth(req, res, next) {
   const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+  
+  if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.error("❌ Auth Failed: Missing or malformed header. Received:", authHeader);
+    return res.status(401).json({ 
+      error: "Missing or invalid Authorization header",
+      hint: "Ensure you are sending 'Authorization: Bearer <token>'" 
+    });
   }
 
-  const token = authHeader.slice(7);
+  const token = authHeader.split(" ")[1];
+  if (!token || token === "null" || token === "undefined") {
+    console.error("❌ Auth Failed: Token is empty or literal 'null'/'undefined'");
+    return res.status(401).json({ error: "Token is missing from Authorization header" });
+  }
 
   try {
     // Verify the JWT via Supabase (service role can decode any valid user token)
