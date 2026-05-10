@@ -173,8 +173,8 @@ router.get("/teachers", async (req, res) => {
  *       A second LLM call validates the answer for NCTB compliance.
  *
  *       **Provider Support:**
- *       This endpoint now supports local LLMs via **Ollama** with automatic
- *       fallback to **Together AI** if the local instance is unavailable.
+ *       This endpoint now supports Google **Gemini AI** with automatic
+ *       fallback to **Together AI** if the primary is unavailable.
  *
  *       **Usage Limits:**
  *       - Free tier: 3 questions/day

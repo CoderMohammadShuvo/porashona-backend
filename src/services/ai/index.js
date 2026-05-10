@@ -1,5 +1,5 @@
 import { TogetherProvider } from "./togetherProvider.js";
-import { OllamaProvider } from "./ollamaProvider.js";
+import { GeminiProvider } from "./geminiProvider.js";
 
 /**
  * AI Service Factory — Provider Resolution + Fallback + Cache + Logging
@@ -8,9 +8,9 @@ import { OllamaProvider } from "./ollamaProvider.js";
  * If the primary fails, falls back to the secondary automatically.
  *
  * Environment variables:
- *   AI_PROVIDER      = "ollama" | "together"  (default: "together")
+ *   AI_PROVIDER      = "gemini" | "together"  (default: "gemini")
  *   AI_MODEL         = model name (provider-specific)
- *   OLLAMA_BASE_URL  = Ollama server URL (default: http://localhost:11434)
+ *   GEMINI_API_KEY   = Google Gemini API key
  *   TOGETHER_API_KEY = Together AI API key
  *   AI_CACHE_TTL     = In-memory cache TTL in ms (default: 300000 = 5 min)
  */
@@ -18,7 +18,7 @@ import { OllamaProvider } from "./ollamaProvider.js";
 // ─── Provider instances (singletons) ─────────────────────
 const providers = {
   together: new TogetherProvider(),
-  ollama: new OllamaProvider(),
+  gemini: new GeminiProvider(),
 };
 
 /**
@@ -26,8 +26,8 @@ const providers = {
  * @returns {import("./aiProvider.js").AIProvider}
  */
 export function getPrimaryProvider() {
-  const name = (process.env.AI_PROVIDER || "together").toLowerCase();
-  return providers[name] || providers.together;
+  const name = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+  return providers[name] || providers.gemini;
 }
 
 /**
@@ -35,8 +35,8 @@ export function getPrimaryProvider() {
  * @returns {import("./aiProvider.js").AIProvider}
  */
 export function getFallbackProvider() {
-  const primary = (process.env.AI_PROVIDER || "together").toLowerCase();
-  return primary === "ollama" ? providers.together : providers.ollama;
+  const primary = (process.env.AI_PROVIDER || "gemini").toLowerCase();
+  return primary === "together" ? providers.gemini : providers.together;
 }
 
 // ─── In-Memory Response Cache ────────────────────────────
@@ -211,5 +211,5 @@ export async function checkHealth() {
 
 // Re-export provider classes for direct access if needed
 export { TogetherProvider } from "./togetherProvider.js";
-export { OllamaProvider } from "./ollamaProvider.js";
+export { GeminiProvider } from "./geminiProvider.js";
 export { AIProvider } from "./aiProvider.js";
