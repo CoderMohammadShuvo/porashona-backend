@@ -22,6 +22,9 @@ import aiChatRoutes from "./routes/aiChat.js";
 import noticeRoutes from "./routes/notices.js";
 import libraryRoutes from "./routes/library.js";
 import courseRoutes from "./routes/courses.js";
+import aiTeacherRoutes from "./routes/aiTeacher.js";
+import assignmentsRoutes from "./routes/assignments.js";
+import arcadeRoutes from "./routes/arcade.js";
 
 
 const app = express();
@@ -112,6 +115,9 @@ app.use("/notices", noticeRoutes);
 app.use("/library", libraryRoutes);
 app.use("/courses", courseRoutes);
 app.use("/api/ai", aiChatRoutes);
+app.use("/api/ai-teacher", aiTeacherRoutes);
+app.use("/assignments", assignmentsRoutes);
+app.use("/arcade", arcadeRoutes);
 
 
 app.listen(PORT, "0.0.0.0", () => {

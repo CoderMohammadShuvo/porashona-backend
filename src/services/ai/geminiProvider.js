@@ -10,7 +10,7 @@ import { AIProvider } from "./aiProvider.js";
  * to match the existing expectations of the aiChat.js route.
  */
 
-const DEFAULT_MODEL = "gemini-2.5-flash"; // default fallback model
+const DEFAULT_MODEL = "gemini-1.5-flash"; // Corrected from typo
 
 export class GeminiProvider extends AIProvider {
   constructor() {
@@ -49,7 +49,7 @@ export class GeminiProvider extends AIProvider {
     
     const config = {
       temperature: options.temperature ?? 0.3,
-      maxOutputTokens: options.max_tokens ?? 800,
+      maxOutputTokens: options.max_tokens ?? 2048,
       topP: 0.9,
     };
 
@@ -87,7 +87,7 @@ export class GeminiProvider extends AIProvider {
     
     const config = {
       temperature: options.temperature ?? 0.3,
-      maxOutputTokens: options.max_tokens ?? 800,
+      maxOutputTokens: options.max_tokens ?? 2048,
       topP: 0.9,
     };
 

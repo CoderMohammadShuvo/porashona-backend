@@ -71,6 +71,49 @@ router.post("/register", async (req, res) => {
   }
 });
 
+router.post("/check-email", async (req, res) => {
+  const { email } = req.body;
+  if (!email) {
+    return res.status(400).json({ error: "Email is required" });
+  }
+  try {
+    console.log("Checking email existence for:", email);
+    const { data: profile, error: profileError } = await supabase
+      .from("users")
+      .select("id")
+      .ilike("email", email)
+      .maybeSingle();
+
+    if (profile) {
+      console.log("Email exists in users table.");
+      return res.json({ exists: true });
+    }
+    
+    if (profileError) {
+      console.error("Profile query error:", profileError);
+    }
+    
+    // Also check auth.users via admin.listUsers
+    const { data: authUsers, error: authError } = await supabase.auth.admin.listUsers();
+    if (authError) {
+      console.error("Auth admin listUsers error:", authError);
+    }
+    if (!authError && authUsers && authUsers.users) {
+      const userExists = authUsers.users.some(u => u.email?.toLowerCase() === email.toLowerCase());
+      if (userExists) {
+        console.log("Email exists in auth.users.");
+        return res.json({ exists: true });
+      }
+    }
+
+    console.log("Email does not exist.");
+    res.json({ exists: false });
+  } catch (err) {
+    console.error("Check email error:", err);
+    res.json({ exists: false });
+  }
+});
+
 /**
  * @swagger
  * /auth/verify-otp:
@@ -223,11 +266,36 @@ router.post("/logout", authMiddleware, async (req, res) => {
  */
 router.get("/me", authMiddleware, async (req, res) => {
   try {
-    const { data: profile } = await supabase
+    let { data: profile, error: profileError } = await supabase
       .from("users")
       .select("*")
       .eq("id", req.user.id)
-      .single();
+      .maybeSingle();
+
+    if (!profile) {
+      const email = req.user.email;
+      const name = req.user.user_metadata?.full_name || email?.split("@")[0] || "Student";
+      
+      const { data: newProfile, error: insertError } = await supabase
+        .from("users")
+        .insert({
+          id: req.user.id,
+          email,
+          name,
+          class: 10,
+          group: "Science",
+          xp: 0,
+          streak: 1,
+        })
+        .select()
+        .maybeSingle();
+
+      if (insertError) {
+        console.error("Auto profile creation failed:", insertError);
+      } else {
+        profile = newProfile;
+      }
+    }
 
     const { data: subscription } = await supabase
       .from("subscriptions")
@@ -248,6 +316,7 @@ router.get("/me", authMiddleware, async (req, res) => {
       subscription: subscription || null,
     });
   } catch (err) {
+    console.error("Fetch profile error:", err);
     res.status(500).json({ error: "Failed to fetch profile" });
   }
 });

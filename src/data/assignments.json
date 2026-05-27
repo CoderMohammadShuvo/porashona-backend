@@ -1,0 +1,58 @@
+[
+  {
+    "id": "a1",
+    "title": "Force & Newton's Laws — Problem Set",
+    "subject": "Physics",
+    "dueDate": "2026-03-28",
+    "status": "due",
+    "grade": null
+  },
+  {
+    "id": "a2",
+    "title": "Algebraic Expressions — Exercise 3.4",
+    "subject": "Mathematics",
+    "dueDate": "2026-03-27",
+    "status": "due",
+    "grade": null
+  },
+  {
+    "id": "a3",
+    "title": "Structure of Matter — Worksheet",
+    "subject": "Chemistry",
+    "dueDate": "2026-03-25",
+    "status": "overdue",
+    "grade": null
+  },
+  {
+    "id": "a4",
+    "title": "Cell Structure — Diagram Labels",
+    "subject": "Biology",
+    "dueDate": "2026-03-22",
+    "status": "completed",
+    "grade": 8.5
+  },
+  {
+    "id": "a5",
+    "title": "Right Forms of Verbs — Practice Sheet",
+    "subject": "English",
+    "dueDate": "2026-03-20",
+    "status": "completed",
+    "grade": 9
+  },
+  {
+    "id": "a6",
+    "title": "বিদ্রোহী — প্রবন্ধ রচনা",
+    "subject": "Bangla",
+    "dueDate": "2026-03-30",
+    "status": "due",
+    "grade": null
+  },
+  {
+    "id": "a_e345b7c2",
+    "title": "Force Practise",
+    "subject": "Demo Subject",
+    "dueDate": "2002-11-27",
+    "status": "due",
+    "grade": null
+  }
+]

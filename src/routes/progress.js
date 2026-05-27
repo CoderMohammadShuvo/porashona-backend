@@ -200,7 +200,7 @@ router.get("/dashboard", authMiddleware, async (req, res) => {
     .eq('user_id', userId)
     .order('completed_at', { ascending: false });
 
-  // 2. Fetch all quiz attempts with subject info for weak spots
+  // 2. Fetch all quiz attempts with subject/chapter info for weak spots (handling both chapter & subtopic quizzes)
   const { data: quizAttempts } = await supabase
     .from('quiz_attempts')
     .select(`
@@ -214,6 +214,13 @@ router.get("/dashboard", authMiddleware, async (req, res) => {
           id,
           title,
           subject_id
+        ),
+        subtopics (
+          chapters (
+            id,
+            title,
+            subject_id
+          )
         )
       )
     `)
@@ -233,20 +240,22 @@ router.get("/dashboard", authMiddleware, async (req, res) => {
     if (vp.completed) subjectProgressMap[subjectId].completed += 1;
   });
 
-  // 4. Build weak spots from quiz performance per subject
-  const subjectScoreMap = {};
+  // 4. Build weak spots from quiz performance per chapter
+  const chapterScoreMap = {};
   quizAttempts?.forEach(a => {
-    const subjectId = a.quizzes?.chapters?.subject_id;
-    if (!subjectId || a.total_questions === 0) return;
-    if (!subjectScoreMap[subjectId]) {
-      subjectScoreMap[subjectId] = { total: 0, count: 0, title: subjectId };
+    const chapter = a.quizzes?.chapters || a.quizzes?.subtopics?.chapters;
+    const chapterId = chapter?.id;
+    const chapterTitle = chapter?.title;
+    if (!chapterId || a.total_questions === 0) return;
+    if (!chapterScoreMap[chapterId]) {
+      chapterScoreMap[chapterId] = { total: 0, count: 0, title: chapterTitle || chapterId };
     }
-    subjectScoreMap[subjectId].total += (a.score / a.total_questions) * 100;
-    subjectScoreMap[subjectId].count += 1;
+    chapterScoreMap[chapterId].total += (a.score / a.total_questions) * 100;
+    chapterScoreMap[chapterId].count += 1;
   });
 
-  // Weak spots: subjects where average score < 70%
-  const weakSpots = Object.entries(subjectScoreMap)
+  // Weak spots: chapters where average score < 70%
+  const weakSpots = Object.entries(chapterScoreMap)
     .map(([id, data]) => ({
       id,
       name: data.title,

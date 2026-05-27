@@ -1,29 +1,33 @@
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const router = Router();
 
-/**
- * @swagger
- * components:
- *   schemas:
- *     Notice:
- *       type: object
- *       required:
- *         - title
- *         - body
- *       properties:
- *         id: { type: string, format: uuid }
- *         title: { type: string }
- *         body: { type: string }
- *         category: { type: string }
- *         target_class: { type: integer }
- *         target_group: { type: string }
- *         status: { type: string, enum: [draft, published, scheduled] }
- *         publish_date: { type: string, format: date-time }
- *         created_at: { type: string, format: date-time }
- */
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const metadataPath = path.join(__dirname, "../data/notice_metadata.json");
+
+function readMetadata() {
+  try {
+    if (!fs.existsSync(metadataPath)) return {};
+    return JSON.parse(fs.readFileSync(metadataPath, "utf-8") || "{}");
+  } catch (err) {
+    console.error("Error reading notice metadata:", err);
+    return {};
+  }
+}
+
+function writeMetadata(data) {
+  try {
+    fs.writeFileSync(metadataPath, JSON.stringify(data, null, 2), "utf-8");
+  } catch (err) {
+    console.error("Error writing notice metadata:", err);
+  }
+}
 
 /**
  * @swagger
@@ -33,9 +37,6 @@ const router = Router();
  *     tags: [Notices]
  *     security:
  *       - bearerAuth: []
- *     responses:
- *       200:
- *         description: List of published notices
  */
 router.get("/", authMiddleware, async (req, res) => {
   try {
@@ -48,23 +49,34 @@ router.get("/", authMiddleware, async (req, res) => {
       .eq("status", "published")
       .lte("publish_date", now)
       .order("publish_date", { ascending: false });
-
-    // Filter by class if notice has a target_class
-    // (target_class IS NULL OR target_class = studentClass)
-    // Supabase JS doesn't support complex OR in a single call easily without .or()
-    // but we can use raw .or for class/group
     
     query = query.or(`target_class.is.null,target_class.eq.${studentClass || 0}`);
     
     const { data, error } = await query;
-
     if (error) throw error;
 
-    // Further filter by group in JS if needed, or using more complex .or
+    const metadata = readMetadata();
+
+    // Filter by group and expired status
     const filtered = data.filter(notice => {
-      if (!notice.target_group) return true;
-      return notice.target_group.toLowerCase() === (group || "").toLowerCase();
-    });
+      // Filter by group
+      if (notice.target_group && notice.target_group.toLowerCase() !== (group || "").toLowerCase()) {
+        return false;
+      }
+      
+      // Filter out expired notices
+      const expireStr = metadata[notice.id]?.expire_date;
+      if (expireStr) {
+        const expireDate = new Date(expireStr);
+        if (new Date() > expireDate) {
+          return false;
+        }
+      }
+      return true;
+    }).map(notice => ({
+      ...notice,
+      expire_date: metadata[notice.id]?.expire_date || null
+    }));
 
     res.json(filtered);
   } catch (err) {
@@ -80,13 +92,6 @@ router.get("/", authMiddleware, async (req, res) => {
  *     tags: [Admin Notices]
  *     security:
  *       - bearerAuth: []
- *     parameters:
- *       - in: query
- *         name: status
- *         schema: { type: string, enum: [draft, published, scheduled] }
- *     responses:
- *       200:
- *         description: List of all notices
  */
 router.get("/admin", authMiddleware, adminMiddleware, async (req, res) => {
   const { status } = req.query;
@@ -99,7 +104,14 @@ router.get("/admin", authMiddleware, adminMiddleware, async (req, res) => {
 
     const { data, error } = await query;
     if (error) throw error;
-    res.json(data);
+
+    const metadata = readMetadata();
+    const merged = data.map(notice => ({
+      ...notice,
+      expire_date: metadata[notice.id]?.expire_date || null
+    }));
+
+    res.json(merged);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -115,7 +127,7 @@ router.get("/admin", authMiddleware, adminMiddleware, async (req, res) => {
  *       - bearerAuth: []
  */
 router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  const { title, body, category, target_class, target_group, publish_date, status } = req.body;
+  const { title, body, category, target_class, target_group, publish_date, status, expire_date } = req.body;
 
   try {
     const { data, error } = await supabase
@@ -134,7 +146,17 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
       .single();
 
     if (error) throw error;
-    res.status(201).json(data);
+
+    if (expire_date) {
+      const metadata = readMetadata();
+      metadata[data.id] = { expire_date };
+      writeMetadata(metadata);
+    }
+
+    res.status(201).json({
+      ...data,
+      expire_date: expire_date || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -150,16 +172,35 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
  *       - bearerAuth: []
  */
 router.patch("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+  const { expire_date, ...rest } = req.body;
   try {
     const { data, error } = await supabase
       .from("notices")
-      .update({ ...req.body, updated_at: new Date().toISOString() })
+      .update({ ...rest, updated_at: new Date().toISOString() })
       .eq("id", req.params.id)
       .select()
       .single();
 
     if (error) throw error;
-    res.json(data);
+
+    if (expire_date !== undefined) {
+      const metadata = readMetadata();
+      if (expire_date) {
+        metadata[req.params.id] = {
+          ...(metadata[req.params.id] || {}),
+          expire_date
+        };
+      } else if (metadata[req.params.id]) {
+        delete metadata[req.params.id].expire_date;
+      }
+      writeMetadata(metadata);
+    }
+
+    const currentMetadata = readMetadata()[req.params.id] || {};
+    res.json({
+      ...data,
+      expire_date: currentMetadata.expire_date || null
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -178,6 +219,13 @@ router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
   try {
     const { error } = await supabase.from("notices").delete().eq("id", req.params.id);
     if (error) throw error;
+
+    const metadata = readMetadata();
+    if (metadata[req.params.id]) {
+      delete metadata[req.params.id];
+      writeMetadata(metadata);
+    }
+
     res.status(204).send();
   } catch (err) {
     res.status(500).json({ error: err.message });

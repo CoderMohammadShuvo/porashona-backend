@@ -17,15 +17,87 @@ const router = Router();
  *         description: List of students
  */
 router.get("/students", authMiddleware, async (req, res) => {
-  if (!req.user.phone) return res.status(200).json([]);
+  if (req.user.group !== "Guardian") {
+    // If the logged in user is a student previewing, return themselves
+    return res.json([{
+      id: req.user.id,
+      name: req.user.name || "Student",
+      class: req.user.class || 10,
+      group: req.user.group || "Science",
+      xp: req.user.xp || 0,
+      streak: req.user.streak || 0,
+      last_active_date: req.user.last_active_date || null
+    }]);
+  }
 
-  const { data, error } = await supabase
+  if (!req.user.phone && !req.user.email) return res.status(200).json([]);
+
+  const lookupPhone = req.user.phone;
+  const lookupEmail = req.user.email;
+
+  let query = supabase
     .from('users')
-    .select('id, name, class, group, xp, streak, last_active_date')
-    .eq('guardian_phone', req.user.phone);
+    .select('id, name, class, group, xp, streak, last_active_date');
+
+  if (lookupPhone && lookupEmail) {
+    query = query.or(`guardian_phone.eq."${lookupPhone}",guardian_phone.eq."${lookupEmail}"`);
+  } else {
+    query = query.eq('guardian_phone', lookupPhone || lookupEmail);
+  }
+
+  const { data, error } = await query;
 
   if (error) return res.status(500).json({ error: error.message });
   res.json(data);
+});
+
+/**
+ * Register and link a guardian user to the current authenticated student
+ */
+router.post("/register", authMiddleware, async (req, res) => {
+  const { email, password, phone } = req.body;
+  if (!email || !password) {
+    return res.status(400).json({ error: "Guardian email and password are required" });
+  }
+
+  try {
+    // 1. Create the guardian user in Supabase auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (authError) return res.status(400).json({ error: authError.message });
+    if (!authData.user) return res.status(400).json({ error: "Guardian signup failed" });
+
+    // 2. Create the guardian profile
+    const guardianPhone = phone || req.user.guardian_phone || email; // Fallback to student's existing guardian_phone or email
+    const { error: profileError } = await supabase.from("users").upsert({
+      id: authData.user.id,
+      email,
+      name: "Guardian",
+      class: 10,
+      group: "Guardian",
+      phone: guardianPhone,
+      xp: 0,
+      streak: 0,
+    });
+
+    if (profileError) throw profileError;
+
+    // 3. Link this student to the guardian by setting the student's guardian_phone to the guardian's identifier
+    const { error: linkError } = await supabase
+      .from("users")
+      .update({ guardian_phone: guardianPhone })
+      .eq("id", req.user.id);
+
+    if (linkError) throw linkError;
+
+    res.json({ success: true, message: "Guardian registered and linked successfully" });
+  } catch (err) {
+    console.error("Guardian register error:", err);
+    res.status(500).json({ error: err.message || "Failed to register guardian" });
+  }
 });
 
 /**
@@ -55,7 +127,11 @@ router.get("/report/:studentId", authMiddleware, async (req, res) => {
     .eq('id', studentId)
     .single();
 
-  if (student?.guardian_phone !== req.user.phone) {
+  const lookupPhone = req.user.phone;
+  const lookupEmail = req.user.email;
+  if (studentId !== req.user.id && 
+      student?.guardian_phone !== lookupPhone && 
+      student?.guardian_phone !== lookupEmail) {
     return res.status(403).json({ error: "Unauthorized access to student data" });
   }
 

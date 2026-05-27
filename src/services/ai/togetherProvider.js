@@ -57,7 +57,7 @@ export class TogetherProvider extends AIProvider {
 
   /** @override */
   async chat(systemPrompt, messages, options = {}) {
-    const model = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const model = options.model || process.env.TOGETHER_MODEL || DEFAULT_MODEL;
     const temperature = options.temperature ?? 0.3;
     const maxTokens = options.max_tokens ?? 800;
 
@@ -93,7 +93,7 @@ export class TogetherProvider extends AIProvider {
 
   /** @override */
   async stream(systemPrompt, messages, options = {}) {
-    const model = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const model = options.model || process.env.TOGETHER_MODEL || DEFAULT_MODEL;
     const temperature = options.temperature ?? 0.3;
     const maxTokens = options.max_tokens ?? 800;
 

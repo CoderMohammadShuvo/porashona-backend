@@ -45,10 +45,10 @@ const CACHE_TTL = parseInt(process.env.AI_CACHE_TTL) || 5 * 60 * 1000; // 5 min 
 const MAX_CACHE_SIZE = 200;
 
 function getCacheKey(systemPrompt, messages, options) {
-  // Use a stable string hash of prompt + messages + key options
+  // Use the full system prompt and message history for the cache key to prevent collisions
   const raw = JSON.stringify({
-    s: systemPrompt.slice(0, 200), // truncate for perf
-    m: messages.map((m) => `${m.role}:${m.content.slice(0, 100)}`),
+    s: systemPrompt,
+    m: messages.map((m) => `${m.role}:${m.content}`),
     t: options.temperature,
     k: options.max_tokens,
   });

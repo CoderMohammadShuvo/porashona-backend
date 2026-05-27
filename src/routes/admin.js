@@ -99,6 +99,7 @@ router.get("/students", requireAuth, requireAdmin, async (req, res) => {
     const { data: students, error } = await supabase
       .from("users")
       .select("*")
+      .neq("group", "Guardian")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
