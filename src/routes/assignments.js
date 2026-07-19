@@ -177,15 +177,17 @@ Student's Submitted Answer:
     }
     writeJsonFile(submissionsPath, submissions);
 
-    // Award +25 XP
+    // Award +25 points via the canonical award_points function (writes to points_ledger)
     try {
-      await supabase.rpc("increment_xp", {
-        user_id: userId,
-        amount: 25,
+      await supabase.rpc("award_points", {
+        p_user_id: userId,
+        p_reason: "quiz_complete",  // closest matching reason; assignments use quiz_complete (+20 base)
+        p_custom_delta: 25,
       });
-    } catch (xpErr) {
-      console.error("Failed to increment XP in DB:", xpErr);
+    } catch (pointsErr) {
+      console.error("Failed to award assignment completion points:", pointsErr);
     }
+
 
     res.json({
       success: true,

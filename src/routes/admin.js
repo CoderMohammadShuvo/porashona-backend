@@ -99,7 +99,8 @@ router.get("/students", requireAuth, requireAdmin, async (req, res) => {
     const { data: students, error } = await supabase
       .from("users")
       .select("*")
-      .neq("group", "Guardian")
+      // Filter to students only – role column replaces the legacy `group` column
+      .eq("role", "student")
       .order("created_at", { ascending: false });
 
     if (error) throw error;
@@ -108,6 +109,7 @@ router.get("/students", requireAuth, requireAdmin, async (req, res) => {
     res.status(500).json({ error: "Failed to fetch students" });
   }
 });
+
 
 /**
  * @swagger

@@ -12,7 +12,6 @@ import chatRoutes from "./routes/chat.js";
 import paymentRoutes from "./routes/payment.js";
 import videoRoutes from "./routes/video.js";
 import ocrRoutes from "./routes/ocr.js";
-import guardianRoutes from "./routes/guardian.js";
 import leaderboardRoutes from "./routes/leaderboard.js";
 import progressRoutes from "./routes/progress.js";
 import subscriptionRoutes from "./routes/subscription.js";
@@ -25,6 +24,12 @@ import courseRoutes from "./routes/courses.js";
 import aiTeacherRoutes from "./routes/aiTeacher.js";
 import assignmentsRoutes from "./routes/assignments.js";
 import arcadeRoutes from "./routes/arcade.js";
+import gamificationRoutes from "./routes/gamification.js";
+import aiAssistantRoutes from "./routes/ai.js";
+import contentRoutes from "./routes/content.js";
+import voucherRoutes from "./routes/vouchers.js";
+import usersAdminRoutes from "./routes/users-admin.js";
+import revenueRoutes from "./routes/revenue.js";
 
 
 const app = express();
@@ -105,7 +110,6 @@ app.use("/chat", chatRoutes);
 app.use("/payment", paymentRoutes);
 app.use("/video", videoRoutes);
 app.use("/ocr", ocrRoutes);
-app.use("/guardian", guardianRoutes);
 app.use("/leaderboard", leaderboardRoutes);
 app.use("/progress", progressRoutes);
 app.use("/subscription", subscriptionRoutes);
@@ -118,6 +122,12 @@ app.use("/api/ai", aiChatRoutes);
 app.use("/api/ai-teacher", aiTeacherRoutes);
 app.use("/assignments", assignmentsRoutes);
 app.use("/arcade", arcadeRoutes);
+app.use("/study", gamificationRoutes);
+app.use("/ai-assistant", aiAssistantRoutes);
+app.use("/content/notes", contentRoutes);
+app.use("/vouchers", voucherRoutes);
+app.use("/admin", usersAdminRoutes);
+app.use("/admin/revenue", revenueRoutes);
 
 
 app.listen(PORT, "0.0.0.0", () => {

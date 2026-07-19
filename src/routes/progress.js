@@ -58,11 +58,18 @@ router.post("/video", authMiddleware, async (req, res) => {
     if (error) throw error;
 
     if (awardXp) {
-      // Award 50 XP for completing a video
-      await supabase.rpc('increment_xp', { user_id: req.user.id, amount: 50 });
+      // Award 50 points via the canonical award_points function (→ points_ledger)
+      // The legacy increment_xp RPC is no longer used.
+      const { error: rpcErr } = await supabase.rpc("award_points", {
+        p_user_id: req.user.id,
+        p_reason: "note_complete",
+        p_custom_delta: 50,
+      });
+      if (rpcErr) console.error("award_points RPC error (progress):", rpcErr.message);
     }
 
-    res.json({ success: true, xpEarned: awardXp ? 50 : 0 });
+    res.json({ success: true, pointsEarned: awardXp ? 50 : 0 });
+
   } catch (err) {
     res.status(500).json({ error: "Failed to save progress" });
   }
@@ -177,6 +184,10 @@ router.get("/summary", authMiddleware, async (req, res) => {
 router.get("/dashboard", authMiddleware, async (req, res) => {
   const userId = req.user.id;
 
+  // 0. Determine student's class & group for curriculum-based total counts
+  const userClass = req.user.class || 10;
+  const userGroup = req.user.group || "Science";
+
   // 1. Fetch all video progress with subtopic & chapter info for subject progress %
   const { data: videoProgress } = await supabase
     .from('video_progress')
@@ -228,17 +239,66 @@ router.get("/dashboard", authMiddleware, async (req, res) => {
     .order('completed_at', { ascending: false })
     .limit(50);
 
-  // 3. Build subject progress map: subjectId -> { completed, total }
-  const subjectProgressMap = {};
+  // 3. Get the REAL total subtopic counts per subject from the curriculum
+  // Fetch all subjects for this class/group with their chapters and subtopic counts
+  const { data: subjects } = await supabase
+    .from('subjects')
+    .select(`
+      id,
+      chapters (
+        id,
+        subtopics (id, is_published)
+      )
+    `)
+    .or(`class.eq.${userClass},class.is.null`);
+
+  // Filter by group in JS (same logic as curriculum endpoint)
+  const filteredSubjects = (subjects || []).filter(s => {
+    if (!s.group) return true;
+    const sg = s.group.toLowerCase();
+    return sg === userGroup.toLowerCase() || sg === "all";
+  });
+
+  // Build total published subtopic count per subject
+  const subjectTotalMap = {};
+  filteredSubjects.forEach(s => {
+    let total = 0;
+    (s.chapters || []).forEach(ch => {
+      total += (ch.subtopics || []).filter(st => st.is_published).length;
+    });
+    subjectTotalMap[s.id] = total;
+  });
+
+  // Build subject progress map: subjectId -> { completed, total }
+  // Count completed videos per subject from user's video_progress
+  const subjectCompletedMap = {};
   videoProgress?.forEach(vp => {
     const subjectId = vp.subtopics?.chapters?.subject_id;
     if (!subjectId) return;
-    if (!subjectProgressMap[subjectId]) {
-      subjectProgressMap[subjectId] = { completed: 0, total: 0 };
+    if (!subjectCompletedMap[subjectId]) {
+      subjectCompletedMap[subjectId] = 0;
     }
-    subjectProgressMap[subjectId].total += 1;
-    if (vp.completed) subjectProgressMap[subjectId].completed += 1;
+    if (vp.completed) subjectCompletedMap[subjectId] += 1;
   });
+
+  // Merge: use real curriculum total, user's completed count
+  const subjectProgressMap = {};
+  for (const subjectId of Object.keys(subjectTotalMap)) {
+    const total = subjectTotalMap[subjectId];
+    const completed = subjectCompletedMap[subjectId] || 0;
+    if (total > 0) {
+      subjectProgressMap[subjectId] = { completed, total };
+    }
+  }
+  // Also include any subjects user has progress in but weren't in filtered list
+  for (const subjectId of Object.keys(subjectCompletedMap)) {
+    if (!subjectProgressMap[subjectId]) {
+      subjectProgressMap[subjectId] = {
+        completed: subjectCompletedMap[subjectId],
+        total: subjectTotalMap[subjectId] || subjectCompletedMap[subjectId],
+      };
+    }
+  }
 
   // 4. Build weak spots from quiz performance per chapter
   const chapterScoreMap = {};

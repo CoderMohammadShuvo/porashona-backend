@@ -203,23 +203,29 @@ router.post("/submit", authMiddleware, async (req, res) => {
 
     if (attemptError) throw attemptError;
 
-    // 5. Update User XP and Streak
-    await supabase.rpc("increment_xp", { 
-      user_id: req.user.id, 
-      amount: xpEarned 
-    });
+    // 5. Award points via the canonical award_points function (→ points_ledger)
+    //    The legacy increment_xp RPC and direct users.xp mutation are no longer used.
+    if (xpEarned > 0) {
+      const { error: rpcErr } = await supabase.rpc("award_points", {
+        p_user_id: req.user.id,
+        p_reason: "quiz_complete",
+        p_custom_delta: xpEarned,
+      });
+      if (rpcErr) console.error("award_points RPC error (quiz):", rpcErr.message);
+    }
 
-    // Check streak
+    // Streak update (display field only, not gamification balance)
     const today = new Date().toISOString().split("T")[0];
     if (req.user.last_active_date !== today) {
       await supabase
         .from("users")
-        .update({ 
+        .update({
           last_active_date: today,
-          streak: (req.user.streak || 0) + 1 
+          streak: (req.user.streak || 0) + 1,
         })
         .eq("id", req.user.id);
     }
+
 
     res.json({
       score,

@@ -1,103 +1,79 @@
+/**
+ * Digital Library Routes – PRD §10.8 / §11.2
+ *
+ * DEPRECATION NOTICE (2026-07-18):
+ *   The legacy `library_items` table path has been deprecated.
+ *   All Digital Library surfaces now read from the `notes` table so that
+ *   the Syllabus and Digital Library frontend surfaces are served by the
+ *   SAME underlying data source (identical note records for the same
+ *   class/subject query).
+ *
+ * Access rules:
+ *   - Subscription gate: only users with subscription_status = 'active'
+ *     can retrieve note content. Unauthenticated or inactive users receive
+ *     metadata only.
+ *   - content_uploader may NOT list all library items here (use /content/notes).
+ *
+ * Admin write operations (create / update / delete) remain on /content/notes.
+ */
 import { Router } from "express";
 import { supabase } from "../lib/supabase.js";
-import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
-import fs from "fs";
-import path from "path";
-import { fileURLToPath } from "url";
+import { authMiddleware } from "../middleware/auth.js";
 
 const router = Router();
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const metadataPath = path.join(__dirname, "../data/library_metadata.json");
-
-function readMetadata() {
-  try {
-    if (!fs.existsSync(metadataPath)) return {};
-    return JSON.parse(fs.readFileSync(metadataPath, "utf-8") || "{}");
-  } catch (err) {
-    console.error("Error reading library metadata:", err);
-    return {};
-  }
-}
-
-function writeMetadata(data) {
-  try {
-    fs.writeFileSync(metadataPath, JSON.stringify(data, null, 2), "utf-8");
-  } catch (err) {
-    console.error("Error writing library metadata:", err);
-  }
-}
 
 /**
  * @swagger
  * /library:
  *   get:
- *     summary: Get all library items
+ *     summary: Get Digital Library items (redirected to notes table)
  *     tags: [Library]
  *     security:
  *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: class
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: subject
+ *         schema: { type: string }
+ *       - in: query
+ *         name: version
+ *         schema: { type: string }
  *     responses:
  *       200:
- *         description: List of library items
+ *         description: List of library notes
+ *       403:
+ *         description: Active subscription required
  */
 router.get("/", authMiddleware, async (req, res) => {
+  // Subscription gate: subscription_status must be 'active' (set on profile or via subscription row)
+  const isActive = req.user.subscription_status === "active";
+  if (!isActive) {
+    return res.status(403).json({
+      error: "Active subscription required to access the Digital Library",
+      code: "SUBSCRIPTION_REQUIRED",
+    });
+  }
+
+  const { class: noteClass, subject, version, chapter } = req.query;
+
   try {
-    const { data, error } = await supabase
-      .from("library_items")
-      .select("*")
+    let query = supabase
+      .from("notes")
+      .select("id, curriculum, class, version, subject, chapter, estimated_minutes, file_url, created_at")
       .order("created_at", { ascending: false });
 
+    if (noteClass) query = query.eq("class", noteClass);
+    if (subject) query = query.ilike("subject", `%${subject}%`);
+    if (version) query = query.eq("version", version);
+    if (chapter) query = query.ilike("chapter", `%${chapter}%`);
+
+    const { data, error } = await query;
     if (error) throw error;
-
-    const metadata = readMetadata();
-    const merged = data.map((item) => ({
-      ...item,
-      class: metadata[item.id]?.class || null,
-      group: metadata[item.id]?.group || null,
-    }));
-
-    res.json(merged);
+    res.json(data);
   } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * @swagger
- * /library:
- *   post:
- *     summary: Create a new library item (Admin)
- *     tags: [Library]
- *     security:
- *       - bearerAuth: []
- */
-router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { class: bookClass, group: bookGroup, ...rest } = req.body;
-    const { data, error } = await supabase
-      .from("library_items")
-      .insert([rest])
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    if (bookClass !== undefined || bookGroup !== undefined) {
-      const metadata = readMetadata();
-      metadata[data.id] = {
-        class: bookClass ? parseInt(bookClass) : null,
-        group: bookGroup || null,
-      };
-      writeMetadata(metadata);
-    }
-
-    res.status(201).json({
-      ...data,
-      class: bookClass || null,
-      group: bookGroup || null,
-    });
-  } catch (err) {
+    console.error("Library fetch error:", err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -105,70 +81,28 @@ router.post("/", authMiddleware, adminMiddleware, async (req, res) => {
 /**
  * @swagger
  * /library/{id}:
- *   patch:
- *     summary: Update a library item (Admin)
+ *   get:
+ *     summary: Get a single library note by id
  *     tags: [Library]
  *     security:
  *       - bearerAuth: []
  */
-router.patch("/:id", authMiddleware, adminMiddleware, async (req, res) => {
+router.get("/:id", authMiddleware, async (req, res) => {
+  const isActive = req.user.subscription_status === "active";
+  if (!isActive) {
+    return res.status(403).json({ error: "Active subscription required", code: "SUBSCRIPTION_REQUIRED" });
+  }
+
   try {
-    const { class: bookClass, group: bookGroup, ...rest } = req.body;
     const { data, error } = await supabase
-      .from("library_items")
-      .update(rest)
+      .from("notes")
+      .select("*")
       .eq("id", req.params.id)
-      .select()
-      .single();
+      .maybeSingle();
 
     if (error) throw error;
-
-    if (bookClass !== undefined || bookGroup !== undefined) {
-      const metadata = readMetadata();
-      metadata[req.params.id] = {
-        ...(metadata[req.params.id] || {}),
-        ...(bookClass !== undefined ? { class: bookClass ? parseInt(bookClass) : null } : {}),
-        ...(bookGroup !== undefined ? { group: bookGroup || null } : {}),
-      };
-      writeMetadata(metadata);
-    }
-
-    const currentMetadata = readMetadata()[req.params.id] || {};
-    res.json({
-      ...data,
-      class: currentMetadata.class || null,
-      group: currentMetadata.group || null,
-    });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-/**
- * @swagger
- * /library/{id}:
- *   delete:
- *     summary: Delete a library item (Admin)
- *     tags: [Library]
- *     security:
- *       - bearerAuth: []
- */
-router.delete("/:id", authMiddleware, adminMiddleware, async (req, res) => {
-  try {
-    const { error } = await supabase
-      .from("library_items")
-      .delete()
-      .eq("id", req.params.id);
-
-    if (error) throw error;
-
-    const metadata = readMetadata();
-    if (metadata[req.params.id]) {
-      delete metadata[req.params.id];
-      writeMetadata(metadata);
-    }
-
-    res.status(204).send();
+    if (!data) return res.status(404).json({ error: "Note not found" });
+    res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

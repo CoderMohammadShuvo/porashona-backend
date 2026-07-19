@@ -40,6 +40,9 @@ export async function requireAuth(req, res, next) {
       // Profile might not exist yet (right after registration)
       req.user = { id: user.id, email: user.email };
     } else {
+      if (profile.is_suspended) {
+        return res.status(403).json({ error: "User profile is suspended.", code: "USER_SUSPENDED" });
+      }
       req.user = { ...user, ...profile };
     }
 
@@ -106,7 +109,35 @@ export async function requireAdmin(req, res, next) {
   next();
 }
 
+/**
+ * Middleware: requires content_uploader role.
+ * Checks the `role` column on the users table, not admin_users.
+ */
+export async function requireContentUploader(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+  if (req.user.role !== "content_uploader") {
+    return res.status(403).json({ error: "Access denied: content_uploader role required" });
+  }
+  next();
+}
+
+/**
+ * Middleware: passes if caller is EITHER an admin OR a content_uploader.
+ * Note: does NOT share logic with requireAdmin – the two roles are checked
+ * independently so a content_uploader can never escalate to admin.
+ */
+export async function requireAdminOrUploader(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Not authenticated" });
+  const isAdmin = req.user.role === "admin";
+  const isUploader = req.user.role === "content_uploader";
+  if (!isAdmin && !isUploader) {
+    return res.status(403).json({ error: "Access denied: admin or content_uploader role required" });
+  }
+  next();
+}
+
 // Aliases for consistency with current route imports
 export const authMiddleware = requireAuth;
 export const adminMiddleware = requireAdmin;
 export const proMiddleware = requirePro;
+

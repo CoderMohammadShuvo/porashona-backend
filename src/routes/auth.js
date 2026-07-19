@@ -201,9 +201,13 @@ router.post("/login", async (req, res) => {
     const today = new Date().toISOString().split("T")[0];
     const { data: user } = await supabase
       .from("users")
-      .select("last_active_date, streak")
+      .select("last_active_date, streak, is_suspended")
       .eq("id", data.user.id)
       .maybeSingle();
+
+    if (user?.is_suspended) {
+      return res.status(403).json({ error: "Your account is suspended.", code: "USER_SUSPENDED" });
+    }
 
     let newStreak = user?.streak || 0;
     if (user?.last_active_date) {

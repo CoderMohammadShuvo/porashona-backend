@@ -18,41 +18,46 @@ const router = Router();
  */
 router.get("/", authMiddleware, async (req, res) => {
   try {
-    // Top 50 by XP (excluding Guardians)
-    const { data: topStudents, error } = await supabase
-      .from('users')
-      .select('id, name, xp, streak, rank')
-      .neq('group', 'Guardian')
-      .order('xp', { ascending: false })
-      .limit(50);
+    // Derive balance from points_ledger (SUM of delta per user) – canonical source of truth.
+    // The legacy `xp` column on `users` is no longer written to by any active code path.
+    const { data: ledger, error: ledgerErr } = await supabase
+      .from("points_ledger")
+      .select("user_id, delta");
 
-    if (error) throw error;
+    if (ledgerErr) throw ledgerErr;
 
-    // Get current user rank dynamically based on XP
-    const { data: userStats } = await supabase
-      .from('users')
-      .select('xp')
-      .eq('id', req.user.id)
-      .single();
-
-    let myRank = 1;
-    if (userStats) {
-      const { count, error: countError } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true })
-        .gt('xp', userStats.xp);
-
-      if (!countError) {
-        myRank = (count || 0) + 1;
-      }
+    // Aggregate balances in JS
+    const balanceMap = {};
+    for (const row of ledger || []) {
+      balanceMap[row.user_id] = (balanceMap[row.user_id] || 0) + row.delta;
     }
 
+    // Fetch student profiles for display (guardian role no longer exists)
+    const { data: users, error: usersErr } = await supabase
+      .from("users")
+      .select("id, name, streak")
+      .eq("role", "student")
+      .eq("is_suspended", false);
+
+    if (usersErr) throw usersErr;
+
+    const ranked = (users || [])
+      .map((u) => ({ ...u, points: balanceMap[u.id] || 0 }))
+      .sort((a, b) => b.points - a.points)
+      .slice(0, 50)
+      .map((u, idx) => ({ ...u, rank: idx + 1 }));
+
+    const myBalance = balanceMap[req.user.id] || 0;
+    const myRank =
+      (users || []).filter((u) => (balanceMap[u.id] || 0) > myBalance).length + 1;
+
     res.json({
-      topStudents,
+      topStudents: ranked,
       myRank,
-      myTotalXp: userStats?.xp || 0
+      myTotalPoints: myBalance,
     });
   } catch (err) {
+    console.error("Leaderboard error:", err);
     res.status(500).json({ error: "Failed to fetch leaderboard" });
   }
 });

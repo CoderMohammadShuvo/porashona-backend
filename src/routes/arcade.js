@@ -65,70 +65,51 @@ router.post("/submit", authMiddleware, async (req, res) => {
   const userId = req.user.id;
 
   try {
-    // 1. Get current stats
-    const { data: user, error: userError } = await supabase
+    // Award +10 points per correct answer via the shared award_points function.
+    // This writes to points_ledger (the canonical source of truth) and respects
+    // the daily cap. The legacy `xp` column on `users` is intentionally NOT updated.
+    const pointsEarned = (correctCount || 0) * 10;
+
+    if (pointsEarned > 0) {
+      const { error: rpcErr } = await supabase.rpc("award_points", {
+        p_user_id: userId,
+        p_reason: "quiz_complete",
+        p_custom_delta: pointsEarned,
+      });
+      if (rpcErr) console.error("award_points RPC error (arcade):", rpcErr.message);
+    }
+
+    // Streak tracking (uses users.streak which is a derived display field, not gamification balance)
+    const today = new Date().toISOString().split("T")[0];
+    const { data: user } = await supabase
       .from("users")
-      .select("xp, streak, last_active_date")
+      .select("streak, last_active_date")
       .eq("id", userId)
       .single();
 
-    if (userError || !user) {
-      return res.status(404).json({ error: "User not found" });
-    }
-
-    // Calculate XP earned: 10 XP per correct answer + completion bonus (e.g. 50 XP if score > 0)
-    const xpEarned = correctCount * 10;
-
-    // Update streak logic
-    const today = new Date().toISOString().split("T")[0];
-    let newStreak = user.streak || 0;
-    if (user.last_active_date !== today) {
+    let newStreak = user?.streak || 0;
+    if (user && user.last_active_date !== today) {
       newStreak += 1;
+      await supabase.from("users").update({ streak: newStreak, last_active_date: today }).eq("id", userId);
     }
 
-    // Increment games_played and best_streak in user metadata or custom columns if any,
-    // otherwise update XP, streak, and last_active_date
-    const newXp = (user.xp || 0) + xpEarned;
-
-    const { error: updateError } = await supabase
-      .from("users")
-      .update({
-        xp: newXp,
-        streak: newStreak,
-        last_active_date: today
-      })
-      .eq("id", userId);
-
-    if (updateError) throw updateError;
-
-    // Return the updated user stats and leaderboard information
-    const { data: topStudents } = await supabase
-      .from("users")
-      .select("id, name, xp, streak, rank")
-      .order("xp", { ascending: false })
-      .limit(50);
-
-    let myRank = 1;
-    const { count, error: countError } = await supabase
-      .from("users")
-      .select("*", { count: "exact", head: true })
-      .gt("xp", newXp);
-
-    if (!countError) {
-      myRank = (count || 0) + 1;
-    }
+    // Derive current balance from points_ledger for response
+    const { data: ledger } = await supabase
+      .from("points_ledger")
+      .select("delta")
+      .eq("user_id", userId);
+    const myBalance = (ledger || []).reduce((s, r) => s + r.delta, 0);
 
     res.json({
-      xpEarned,
-      newXp,
+      pointsEarned,
+      myTotalPoints: myBalance,
       newStreak,
-      myRank,
-      topStudents: topStudents || []
     });
   } catch (err) {
     console.error("Error submitting blitz score:", err);
     res.status(500).json({ error: "Failed to submit blitz score" });
   }
 });
+
 
 export default router;
