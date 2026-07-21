@@ -1,0 +1,18 @@
+# Render deployment configuration for Porashona Backend
+services:
+  - type: web
+    name: porashona-backend
+    env: node
+    region: singapore
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: AI_PROVIDER
+        value: openrouter # or "gemini"
+      - key: AI_MODEL
+        value: google/gemini-2.5-flash

@@ -19,6 +19,7 @@ import { GeminiProvider } from "./geminiProvider.js";
 const providers = {
   together: new TogetherProvider(),
   gemini: new GeminiProvider(),
+  openrouter: new OpenRouterProvider(),
 };
 
 /**
