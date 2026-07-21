@@ -1,5 +1,6 @@
 import { TogetherProvider } from "./togetherProvider.js";
 import { GeminiProvider } from "./geminiProvider.js";
+import { OpenRouterProvider } from "./openrouterProvider.js";
 
 /**
  * AI Service Factory — Provider Resolution + Fallback + Cache + Logging
