@@ -992,6 +992,215 @@ router.get("/teachers", authMiddleware, async (req, res) => {
   res.json(teachers);
 });
 
+// ─── POST /api/ai/tutor/chat — AI Tutor SSE Streaming ───────────────────────
+/**
+ * @swagger
+ * /api/ai/tutor/chat:
+ *   post:
+ *     summary: Stream AI Tutor responses for class 1-12 students (SSE)
+ *     description: |
+ *       A dedicated endpoint for the AI Tutor page. Uses the Sofia persona
+ *       (Founding Principal — broad general academic guidance, no strict
+ *       NCTB-only restriction) so that students from class 1-12 can ask
+ *       any subject or topic question and get a helpful answer.
+ *
+ *       Response is streamed via Server-Sent Events (SSE) in the same
+ *       OpenAI-compatible format used by /api/ai/chat/stream.
+ *
+ *       **SSE Format:**
+ *       ```
+ *       data: {"choices":[{"delta":{"content":"chunk"}}]}
+ *       data: [DONE]
+ *       ```
+ *     tags: [AI Faculty]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [message]
+ *             properties:
+ *               message:
+ *                 type: string
+ *                 description: The student's question (max 2000 chars)
+ *                 example: "Can you explain Newton's Second Law?"
+ *               studentContext:
+ *                 type: object
+ *                 description: Optional student metadata for personalisation
+ *                 properties:
+ *                   name: { type: string }
+ *                   class: { type: integer, example: 10 }
+ *                   group: { type: string, example: "Science" }
+ *                   curriculum: { type: string, example: "SSC" }
+ *               language:
+ *                 type: string
+ *                 enum: [en, bn]
+ *                 default: en
+ *               history:
+ *                 type: array
+ *                 description: Previous conversation turns (last 10 used)
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     role: { type: string, enum: [user, assistant] }
+ *                     content: { type: string }
+ *     responses:
+ *       200:
+ *         description: SSE stream of AI response chunks
+ *       400:
+ *         description: Missing required fields
+ *       429:
+ *         description: Daily usage limit or rate limit reached
+ */
+router.post("/tutor/chat", authMiddleware, chatLimiter, async (req, res) => {
+  try {
+    const { message, studentContext = {}, language = "en", history = [] } = req.body;
+    const userId = req.user.id;
+
+    if (!message?.trim()) {
+      return res.status(400).json({ error: "message is required" });
+    }
+
+    const sanitizedMessage = sanitizePrompt(message);
+
+    // Check tier & usage
+    const { tier } = await getUserTier(userId);
+    const usageCheck = await checkAndIncrementUsage(userId, tier);
+    if (!usageCheck.allowed) {
+      return res.status(429).json({
+        error: `Daily limit reached (${usageCheck.limit}/day). Upgrade for more questions!`,
+        code: "DAILY_LIMIT",
+        tier,
+        used: usageCheck.used,
+        limit: usageCheck.limit,
+      });
+    }
+
+    // Build student context string for the prompt
+    const studentClass = studentContext.class || req.user.class || "General";
+    const studentGroup = studentContext.group || req.user.group || "General";
+    const studentCurriculum = studentContext.curriculum || (Number(studentClass) >= 11 ? "HSC" : "SSC");
+    const studentName = studentContext.name || req.user.name || "Student";
+    const langInstruction = language === "bn"
+      ? "Respond in Bangla or a natural Bangla-English mix."
+      : "Respond in the same language the student used. Default to English.";
+
+    const systemPrompt = `You are an AI Academic Tutor for Porashona, Bangladesh's premier AI-powered educational platform.
+
+═══════════════════════════════════════════
+IDENTITY & ROLE
+═══════════════════════════════════════════
+You are a warm, encouraging, expert tutor who can help students from Class 1 to Class 12 with ANY academic subject including:
+- Mathematics (Arithmetic, Algebra, Geometry, Calculus)
+- Physics (Mechanics, Optics, Electricity, Modern Physics)
+- Chemistry (Organic, Inorganic, Physical Chemistry)
+- Biology (Botany, Zoology, Genetics, Cell Biology)
+- English Language & Literature
+- Bangla Language & Literature
+- ICT / Computer Science
+- History & Social Studies
+- Economics & Business Studies
+- HSC & SSC exam preparation
+
+═══════════════════════════════════════════
+CURRENT STUDENT CONTEXT
+═══════════════════════════════════════════
+Name: ${studentName}
+Class: ${studentClass}
+Group: ${studentGroup}
+Curriculum: ${studentCurriculum}
+
+═══════════════════════════════════════════
+STRICT RULES
+═══════════════════════════════════════════
+1. Answer ALL academic questions clearly and helpfully — you are NOT limited to NCTB only.
+2. Tailor explanations to the student's class level (${studentClass}).
+3. Use examples relevant to the Bangladesh context where appropriate.
+4. For math/science, show step-by-step solutions. Use LaTeX math ($...$) for equations.
+5. NEVER reveal you are an AI model (GPT, Claude, Gemini, etc.). You are the Porashona AI Tutor.
+6. NEVER provide harmful, offensive, or non-educational content.
+7. If a question is completely off-topic (not academic), gently redirect: "I specialize in academic subjects. Let's study a syllabus topic instead!"
+8. Keep answers clear but thorough — students need real understanding, not just facts.
+9. ${langInstruction}`;
+
+    // Build messages array with history
+    const messages = [
+      ...history.slice(-10).map((m) => ({ role: m.role, content: m.content })),
+      { role: "user", content: sanitizedMessage },
+    ];
+
+    // Set SSE headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+
+    let fullResponse = "";
+
+    try {
+      const streamResponse = await streamOpenRouter(systemPrompt, messages, {
+        temperature: 0.4,
+        max_tokens: 1024,
+      });
+
+      let buffer = "";
+
+      streamResponse.data.on("data", (chunk) => {
+        buffer += chunk.toString();
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || !trimmed.startsWith("data: ")) continue;
+
+          const data = trimmed.slice(6);
+          if (data === "[DONE]") continue;
+
+          try {
+            const parsed = JSON.parse(data);
+            const content = parsed.choices?.[0]?.delta?.content;
+            if (content) {
+              fullResponse += content;
+              res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+            }
+          } catch {
+            // Skip unparseable chunks
+          }
+        }
+      });
+
+      streamResponse.data.on("end", () => {
+        res.write("data: [DONE]\n\n");
+        res.end();
+        // Log (fire-and-forget)
+        logChatMessages(userId, "tutor", sanitizedMessage, fullResponse, 0);
+      });
+
+      streamResponse.data.on("error", (err) => {
+        console.error("Tutor stream error:", err.message);
+        res.write(`data: ${JSON.stringify({ error: "Stream interrupted" })}\n\n`);
+        res.write("data: [DONE]\n\n");
+        res.end();
+      });
+
+    } catch (streamErr) {
+      console.error("Tutor stream setup error:", streamErr.message);
+      res.write(`data: ${JSON.stringify({ error: "AI service unavailable" })}\n\n`);
+      res.write("data: [DONE]\n\n");
+      res.end();
+    }
+  } catch (err) {
+    console.error("Tutor chat error:", err.message);
+    if (!res.headersSent) {
+      return res.status(500).json({ error: "AI service temporarily unavailable. Please try again." });
+    }
+  }
+});
+
 // ─── GET /api/ai/health — AI Provider Health ─────────────
 /**
  * @swagger
