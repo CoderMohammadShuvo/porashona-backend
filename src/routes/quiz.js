@@ -6,6 +6,57 @@ import { callOpenRouter } from "../lib/aiProvider.js";
 
 const router = Router();
 
+// Usage limits per tier for Quiz Generation (2 per day on free)
+const QUIZ_DAILY_LIMITS = { free: 2, basic: 10, pro: Infinity };
+
+async function getUserTier(userId) {
+  const { data: sub } = await supabase
+    .from("subscriptions")
+    .select("status, plan_id, expires_at")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!sub) return "free";
+  const planId = (sub.plan_id || "").toLowerCase();
+  if (planId.includes("pro") || planId.includes("premium")) return "pro";
+  if (planId.includes("basic") || planId.includes("starter")) return "basic";
+  return "basic";
+}
+
+async function checkAndIncrementQuizUsage(userId, tier) {
+  const today = new Date().toISOString().split("T")[0];
+  const limit = QUIZ_DAILY_LIMITS[tier] ?? QUIZ_DAILY_LIMITS.free;
+
+  const { data: usage } = await supabase
+    .from("daily_ai_usage")
+    .select("quiz_gen_used")
+    .eq("user_id", userId)
+    .eq("date", today)
+    .single();
+
+  const current = usage?.quiz_gen_used ?? 0;
+
+  if (limit !== Infinity && current >= limit) {
+    return { allowed: false, used: current, limit, remaining: 0 };
+  }
+
+  await supabase.from("daily_ai_usage").upsert(
+    { user_id: userId, date: today, quiz_gen_used: current + 1 },
+    { onConflict: "user_id,date" }
+  );
+
+  return {
+    allowed: true,
+    used: current + 1,
+    limit: limit === Infinity ? -1 : limit,
+    remaining: limit === Infinity ? -1 : Math.max(0, limit - (current + 1)),
+  };
+}
+
 /**
  * @swagger
  * /quiz/chapter/{chapterId}:
@@ -414,9 +465,23 @@ router.get("/attempts/me", authMiddleware, async (req, res) => {
  */
 router.post("/generate", authMiddleware, async (req, res) => {
   const { note_id, count = 10, difficulty = "mixed", language = "en" } = req.body;
+  const userId = req.user.id;
 
   if (!note_id) {
     return res.status(400).json({ error: "note_id is required" });
+  }
+
+  // Rate limiting: max 2 per day on free plan
+  const tier = await getUserTier(userId);
+  const usageCheck = await checkAndIncrementQuizUsage(userId, tier);
+  if (!usageCheck.allowed) {
+    return res.status(429).json({
+      error: `Daily quiz generation limit reached (${usageCheck.limit}/day on free plan). Upgrade to PRO for unlimited quizzes!`,
+      code: "DAILY_LIMIT",
+      tier,
+      used: usageCheck.used,
+      limit: usageCheck.limit,
+    });
   }
 
   const validCounts = [5, 10, 15];

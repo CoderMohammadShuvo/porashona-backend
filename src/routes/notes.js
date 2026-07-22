@@ -47,13 +47,56 @@ const upload = multer({
   },
 });
 
-// Rate limit: max 5 note generations per user per 10 minutes
-const generateLimiter = rateLimit({
-  windowMs: 10 * 60 * 1000,
-  max: 5,
-  keyGenerator: (req) => req.user?.id || req.ip,
-  message: { error: "Too many note generation requests. Please wait a few minutes." },
-});
+// Usage limits per tier for Note Generation
+const NOTE_DAILY_LIMITS = { free: 3, basic: 15, pro: Infinity };
+
+async function getUserTier(userId) {
+  const { data: sub } = await supabase
+    .from("subscriptions")
+    .select("status, plan_id, expires_at")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (!sub) return "free";
+  const planId = (sub.plan_id || "").toLowerCase();
+  if (planId.includes("pro") || planId.includes("premium")) return "pro";
+  if (planId.includes("basic") || planId.includes("starter")) return "basic";
+  return "basic";
+}
+
+async function checkAndIncrementNoteUsage(userId, tier) {
+  const today = new Date().toISOString().split("T")[0];
+  const limit = NOTE_DAILY_LIMITS[tier] ?? NOTE_DAILY_LIMITS.free;
+
+  const { data: usage } = await supabase
+    .from("daily_ai_usage")
+    .select("note_gen_used")
+    .eq("user_id", userId)
+    .eq("date", today)
+    .single();
+
+  const current = usage?.note_gen_used ?? 0;
+
+  if (limit !== Infinity && current >= limit) {
+    return { allowed: false, used: current, limit, remaining: 0 };
+  }
+
+  await supabase.from("daily_ai_usage").upsert(
+    { user_id: userId, date: today, note_gen_used: current + 1 },
+    { onConflict: "user_id,date" }
+  );
+
+  return {
+    allowed: true,
+    used: current + 1,
+    limit: limit === Infinity ? -1 : limit,
+    remaining: limit === Infinity ? -1 : Math.max(0, limit - (current + 1)),
+  };
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -259,13 +302,26 @@ async function uploadSourceFile(file, userId) {
  *       500:
  *         description: AI generation failed
  */
-router.post("/generate", authMiddleware, generateLimiter, upload.single("file"), async (req, res) => {
+router.post("/generate", authMiddleware, upload.single("file"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No file provided. Please upload a PDF, DOCX, PPTX, PNG, or JPG file." });
   }
 
   const userId = req.user.id;
   const file = req.file;
+
+  // Rate limiting: max 3 per day on free plan
+  const tier = await getUserTier(userId);
+  const usageCheck = await checkAndIncrementNoteUsage(userId, tier);
+  if (!usageCheck.allowed) {
+    return res.status(429).json({
+      error: `Daily note generation limit reached (${usageCheck.limit}/day on free plan). Upgrade to PRO for unlimited notes!`,
+      code: "DAILY_LIMIT",
+      tier,
+      used: usageCheck.used,
+      limit: usageCheck.limit,
+    });
+  }
 
   console.log(`[Notes] Generating note for user ${userId}, file: ${file.originalname} (${file.size} bytes)`);
 
