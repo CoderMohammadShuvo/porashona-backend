@@ -1,6 +1,8 @@
 import { Router } from "express";
+import axios from "axios";
 import { supabase } from "../lib/supabase.js";
 import { authMiddleware, adminMiddleware } from "../middleware/auth.js";
+import { callOpenRouter } from "../lib/aiProvider.js";
 
 const router = Router();
 
@@ -372,6 +374,183 @@ router.get("/attempts/me", authMiddleware, async (req, res) => {
     res.json(data);
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /quiz/generate — AI Note-Based Quiz Generator ──────────────────
+/**
+ * @swagger
+ * /quiz/generate:
+ *   post:
+ *     summary: Generate interactive quiz questions from a study note
+ *     description: |
+ *       Fetches the user's generated note content, sends it to AI (Gemini),
+ *       and generates the specified number of multiple choice questions (5, 10, 15)
+ *       with custom difficulty (easy, medium, hard, mixed).
+ *     tags: [Quiz]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [note_id]
+ *             properties:
+ *               note_id: { type: string }
+ *               count: { type: integer, enum: [5, 10, 15], default: 10 }
+ *               difficulty: { type: string, enum: [easy, medium, hard, mixed], default: mixed }
+ *               language: { type: string, default: en }
+ *     responses:
+ *       200:
+ *         description: Quiz generated successfully
+ *       400:
+ *         description: Invalid parameters
+ *       404:
+ *         description: Note not found
+ *       500:
+ *         description: Generation failed
+ */
+router.post("/generate", authMiddleware, async (req, res) => {
+  const { note_id, count = 10, difficulty = "mixed", language = "en" } = req.body;
+
+  if (!note_id) {
+    return res.status(400).json({ error: "note_id is required" });
+  }
+
+  const validCounts = [5, 10, 15];
+  const questionCount = validCounts.includes(Number(count)) ? Number(count) : 10;
+  const validDifficulties = ["easy", "medium", "hard", "mixed"];
+  const quizDifficulty = validDifficulties.includes(difficulty) ? difficulty : "mixed";
+
+  try {
+    // 1. Fetch note record from generated_notes
+    const { data: note, error: fetchErr } = await supabase
+      .from("generated_notes")
+      .select("*")
+      .eq("id", note_id)
+      .eq("user_id", req.user.id)
+      .maybeSingle();
+
+    if (fetchErr) throw fetchErr;
+
+    let noteText = "";
+    let noteTitle = note?.title || "Study Note";
+
+    if (note) {
+      // 2. Fetch note content HTML/text from generated_pdf_url or source_file_url
+      const targetUrl = note.generated_pdf_url || note.source_file_url;
+      if (targetUrl) {
+        try {
+          const fetchRes = await axios.get(targetUrl, { timeout: 8000 });
+          if (typeof fetchRes.data === "string") {
+            // Strip HTML tags for clean text content
+            noteText = fetchRes.data.replace(/<[^>]+>/g, " ").replace(/\s{2,}/g, " ").trim();
+          }
+        } catch (e) {
+          console.warn("Could not fetch content from note URL:", e.message);
+        }
+      }
+    }
+
+    if (!noteText) {
+      noteText = `Topic: ${noteTitle}. Provide standard academic practice questions for this subject.`;
+    }
+
+    // 3. Build AI prompt
+    const prompt = `You are an expert exam setter. Based on the following study note content, generate EXACTLY ${questionCount} multiple-choice quiz questions.
+
+STUDY NOTE TITLE: ${noteTitle}
+DIFFICULTY LEVEL: ${quizDifficulty}
+LANGUAGE: ${language === "bn" ? "Bangla" : "English"}
+
+SOURCE CONTENT:
+---
+${noteText.slice(0, 10000)}
+---
+
+REQUIREMENTS:
+1. Generate EXACTLY ${questionCount} questions.
+2. Each question MUST have exactly 4 distinct options.
+3. Indicate the zero-based index (0, 1, 2, or 3) of the correct answer in "correct_answer_index".
+4. Provide a clear, concise explanation (1-2 sentences) for why the correct answer is right.
+5. Return ONLY a JSON object in the exact format specified below, with no markdown fences, no leading/trailing text.
+
+EXPECTED JSON FORMAT:
+{
+  "title": "${noteTitle} Practice Quiz",
+  "questions": [
+    {
+      "question_text": "The question string here",
+      "options": ["Option 0", "Option 1", "Option 2", "Option 3"],
+      "correct_answer_index": 0,
+      "explanation": "Explanation here..."
+    }
+  ]
+}`;
+
+    // 4. Call AI provider
+    const aiRes = await callOpenRouter(
+      "You are a precise JSON generator for academic quizzes. Output only JSON.",
+      [{ role: "user", content: prompt }],
+      { temperature: 0.3, max_tokens: 4000, skipCache: true }
+    );
+
+    let rawContent = aiRes.content.trim();
+    rawContent = rawContent
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    let parsedJSON;
+    try {
+      parsedJSON = JSON.parse(rawContent);
+    } catch (parseErr) {
+      const match = rawContent.match(/\{[\s\S]*\}/);
+      if (match) {
+        parsedJSON = JSON.parse(match[0]);
+      } else {
+        throw new Error("Failed to parse AI quiz output as JSON");
+      }
+    }
+
+    const questions = parsedJSON.questions || [];
+
+    if (!Array.isArray(questions) || questions.length === 0) {
+      throw new Error("AI returned empty question set");
+    }
+
+    // 5. Store generated quiz in generated_quizzes table (optional / fire & forget)
+    let savedQuizId = null;
+    try {
+      const { data: quizRecord } = await supabase
+        .from("generated_quizzes")
+        .insert({
+          note_id: note ? note.id : null,
+          questions: questions,
+          difficulty: quizDifficulty,
+          question_count: questions.length,
+        })
+        .select("id")
+        .single();
+      if (quizRecord) savedQuizId = quizRecord.id;
+    } catch (dbErr) {
+      console.warn("Could not save to generated_quizzes:", dbErr.message);
+    }
+
+    return res.json({
+      id: savedQuizId || `quiz-${Date.now()}`,
+      note_id: note_id,
+      title: parsedJSON.title || `${noteTitle} Practice Quiz`,
+      difficulty: quizDifficulty,
+      question_count: questions.length,
+      questions: questions,
+    });
+  } catch (err) {
+    console.error("AI Quiz generation error:", err);
+    return res.status(500).json({ error: err.message || "Failed to generate AI quiz." });
   }
 });
 
