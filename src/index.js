@@ -31,6 +31,7 @@ import contentRoutes from "./routes/content.js";
 import voucherRoutes from "./routes/vouchers.js";
 import usersAdminRoutes from "./routes/users-admin.js";
 import revenueRoutes from "./routes/revenue.js";
+import notesRoutes from "./routes/notes.js";
 
 
 const app = express();
@@ -130,6 +131,7 @@ app.use("/content/notes", contentRoutes);
 app.use("/vouchers", voucherRoutes);
 app.use("/admin", usersAdminRoutes);
 app.use("/admin/revenue", revenueRoutes);
+app.use("/notes", notesRoutes);
 
 
 app.listen(PORT, "0.0.0.0", () => {
