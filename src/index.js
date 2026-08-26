@@ -88,8 +88,8 @@ app.use((req, res, next) => {
 });
 
 // ─── Body parsing ────────────────────────────────────────
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "200mb" }));
+app.use(express.urlencoded({ extended: true, limit: "200mb" }));
 
 // ─── Global rate limiter ─────────────────────────────────
 app.use(rateLimit({

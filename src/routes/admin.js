@@ -7,7 +7,7 @@ import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import { GoogleGenAI } from "@google/genai";
 
 const router = Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 150 * 1024 * 1024 } });
 const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 
@@ -851,7 +851,17 @@ router.post("/content/teachers/test", requireAuth, requireAdmin, async (req, res
  * AI PDF Book Extraction Wizard Endpoint
  * Parses textbook metadata and generates chapters & topics
  */
-router.post("/content/extract-subject-pdf", requireAuth, requireAdmin, upload.single("pdf"), async (req, res) => {
+router.post("/content/extract-subject-pdf", requireAuth, requireAdmin, (req, res, next) => {
+  upload.single("pdf")(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(413).json({ error: "File too large. Maximum PDF size is 150 MB." });
+      }
+      return res.status(400).json({ error: err.message });
+    }
+    next();
+  });
+}, async (req, res) => {
   const { name: rawName, language, classNum, group } = req.body;
   const pdfBuffer = req.file?.buffer;
   const pdfOriginalName = req.file?.originalname || "textbook.pdf";
