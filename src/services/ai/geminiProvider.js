@@ -10,7 +10,7 @@ import { AIProvider } from "./aiProvider.js";
  * to match the existing expectations of the aiChat.js route.
  */
 
-const DEFAULT_MODEL = "gemini-1.5-flash"; // Corrected from typo
+const DEFAULT_MODEL = "gemini-3.7-flash"; // Corrected from typo
 
 export class GeminiProvider extends AIProvider {
   constructor() {
@@ -135,7 +135,7 @@ export class GeminiProvider extends AIProvider {
     try {
       // Fast check: generate 1 token
       await this.ai.models.generateContent({
-        model: "gemini-1.5-flash",
+        model: "gemini-3.7-flash",
         contents: "test",
         config: { maxOutputTokens: 1 }
       });

@@ -9,7 +9,7 @@ export class OpenRouterProvider extends AIProvider {
   constructor() {
     super("openrouter");
     this.apiKey = process.env.OPENROUTER_API_KEY || process.env.GEMINI_API_KEY;
-    this.defaultModel = process.env.OPENROUTER_MODEL || process.env.AI_MODEL || "google/gemini-2.5-flash";
+    this.defaultModel = process.env.OPENROUTER_MODEL || process.env.AI_MODEL || "google/ggemini-3.7-flash";
     this.baseUrl = "https://openrouter.ai/api/v1";
   }
 

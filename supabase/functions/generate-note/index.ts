@@ -110,7 +110,7 @@ Analyze the following text extracted from a study document and generate a beauti
 Write the notes entirely in ${targetLanguage}.
 Include core formulas, equations, concepts, and key terms.`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`
     const response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

@@ -15,4 +15,4 @@ services:
       - key: AI_PROVIDER
         value: openrouter # or "gemini"
       - key: AI_MODEL
-        value: google/gemini-2.5-flash
+        value: google/gemini-3.7-flash

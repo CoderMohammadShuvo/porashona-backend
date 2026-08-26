@@ -922,7 +922,7 @@ Return ONLY the JSON array:`;
     try {
       const model = genai.models;
       const result = await model.generateContent({
-        model: "gemini-2.0-flash",
+        model: "gemini-3.7-flash",
         contents: [{ role: "user", parts: [{ text: aiPrompt }] }],
         config: { temperature: 0.2, maxOutputTokens: 4096 }
       });
