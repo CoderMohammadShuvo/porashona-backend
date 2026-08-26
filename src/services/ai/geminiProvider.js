@@ -44,7 +44,9 @@ export class GeminiProvider extends AIProvider {
   async chat(systemPrompt, messages, options = {}) {
     if (!this.ai) throw new Error("GEMINI_API_KEY is not configured.");
     
-    const model = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const baseModel = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const modelsToTry = [...new Set([baseModel, "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"])];
+    
     const contents = this.#formatMessages(messages);
     
     const config = {
@@ -62,11 +64,26 @@ export class GeminiProvider extends AIProvider {
       contents.push({ role: "user", parts: [{ text: "Hello" }] });
     }
 
-    const response = await this.ai.models.generateContent({
-      model,
-      contents,
-      config
-    });
+    let response = null;
+    let lastErr = null;
+
+    for (const m of modelsToTry) {
+      try {
+        response = await this.ai.models.generateContent({
+          model: m,
+          contents,
+          config
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Model ${m} failed in chat:`, err.message);
+      }
+    }
+
+    if (!response) {
+      throw lastErr || new Error("All AI models failed");
+    }
 
     const content = response.text || "";
     const tokensUsed = response.usageMetadata?.totalTokenCount || 0;
@@ -82,7 +99,9 @@ export class GeminiProvider extends AIProvider {
   async stream(systemPrompt, messages, options = {}) {
     if (!this.ai) throw new Error("GEMINI_API_KEY is not configured.");
 
-    const model = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const baseModel = options.model || process.env.AI_MODEL || DEFAULT_MODEL;
+    const modelsToTry = [...new Set([baseModel, "gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"])];
+    
     const contents = this.#formatMessages(messages);
     
     const config = {
@@ -99,11 +118,26 @@ export class GeminiProvider extends AIProvider {
       contents.push({ role: "user", parts: [{ text: "Hello" }] });
     }
 
-    const streamResponse = await this.ai.models.generateContentStream({
-      model,
-      contents,
-      config
-    });
+    let streamResponse = null;
+    let lastErr = null;
+
+    for (const m of modelsToTry) {
+      try {
+        streamResponse = await this.ai.models.generateContentStream({
+          model: m,
+          contents,
+          config
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Model ${m} failed in stream:`, err.message);
+      }
+    }
+
+    if (!streamResponse) {
+      throw lastErr || new Error("All AI models failed");
+    }
 
     const transformed = new PassThrough();
 

@@ -110,8 +110,11 @@ Analyze the following text extracted from a study document and generate a beauti
 Write the notes entirely in ${targetLanguage}.
 Include core formulas, equations, concepts, and key terms.`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`
-    const response = await fetch(geminiUrl, {
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+    let response: any;
+    for (const model of modelsToTry) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -128,9 +131,11 @@ Include core formulas, equations, concepts, and key terms.`
           ]
         }
       })
-    })
+      if (response.ok) break;
+      console.warn(`Model ${model} failed with status:`, response.status);
+    }
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       throw new Error("Gemini note generation failed")
     }
 

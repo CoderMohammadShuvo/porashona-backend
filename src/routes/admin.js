@@ -920,12 +920,25 @@ Return ONLY the JSON array:`;
 
     let extractedChapters = [];
     try {
-      const model = genai.models;
-      const result = await model.generateContent({
-        model: "gemini-3.7-flash",
-        contents: [{ role: "user", parts: [{ text: aiPrompt }] }],
-        config: { temperature: 0.2, maxOutputTokens: 4096 }
-      });
+      const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+      let result = null;
+      let lastErr = null;
+
+      for (const m of modelsToTry) {
+        try {
+          result = await genai.models.generateContent({
+            model: m,
+            contents: [{ role: "user", parts: [{ text: aiPrompt }] }],
+            config: { temperature: 0.2, maxOutputTokens: 4096 }
+          });
+          break;
+        } catch (err) {
+          lastErr = err;
+          console.warn(`Model ${m} failed:`, err.message);
+        }
+      }
+
+      if (!result) throw lastErr;
 
       const rawText = result.text?.trim() || "";
       // Strip markdown fences if any
@@ -934,18 +947,7 @@ Return ONLY the JSON array:`;
       if (!Array.isArray(extractedChapters)) throw new Error("Not an array");
     } catch (aiErr) {
       console.error("Gemini extraction error:", aiErr.message);
-      // Fallback: build generic NCTB structure
-      extractedChapters = isBn
-        ? [
-            { title: `${inferredName} — ১ম অধ্যায়`, topics: ["মৌলিক ধারণা ও পরিচিতি", "প্রাথমিক সূত্রাবলী", "সংজ্ঞা ও পরিভাষা"] },
-            { title: `${inferredName} — ২য় অধ্যায়`, topics: ["মূল তত্ত্ব ও নীতি", "গাণিতিক প্রয়োগ", "উদাহরণ ও সমাধান"] },
-            { title: `${inferredName} — ৩য় অধ্যায়`, topics: ["উন্নত আলোচনা", "বোর্ড প্রশ্ন বিশ্লেষণ", "পরীক্ষার প্রস্তুতি"] },
-          ]
-        : [
-            { title: `${inferredName} — Chapter 1`, topics: ["Introduction & Basic Concepts", "Fundamental Definitions", "Core Principles"] },
-            { title: `${inferredName} — Chapter 2`, topics: ["Main Theory & Laws", "Mathematical Applications", "Worked Examples"] },
-            { title: `${inferredName} — Chapter 3`, topics: ["Advanced Analysis", "Board Question Patterns", "Exam Preparation"] },
-          ];
+      return res.status(503).json({ error: "AI generation failed due to high demand. Please try again later. " + aiErr.message });
     }
 
     // ── Step 3: Save subject to DB ─────────────────────────────────────────────

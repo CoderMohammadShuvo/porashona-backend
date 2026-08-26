@@ -102,8 +102,11 @@ Difficulty level: ${difficulty}.
 Return the response as a JSON object matching the schema. Each question must have exactly 4 options.`
 
     const noteContext = `Study Note Reference PDF: ${note.generated_pdf_url}`
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`
-    const response = await fetch(geminiUrl, {
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+    let response: any;
+    for (const model of modelsToTry) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -145,9 +148,11 @@ Return the response as a JSON object matching the schema. Each question must hav
           }
         }
       })
-    })
+      if (response.ok) break;
+      console.warn(`Model ${model} failed with status:`, response.status);
+    }
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       const errText = await response.text()
       console.error("Gemini quiz generation failed:", errText)
       throw new Error("Failed to generate quiz questions using Gemini")

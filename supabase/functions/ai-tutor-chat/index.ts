@@ -97,8 +97,11 @@ Rules:
 4. Do NOT ask follow-up questions.
 5. Keep your response concise, structured, and easy to read. Do not reference any prior session transcripts.`
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.7-flash:generateContent?key=${apiKey}`
-    const response = await fetch(geminiUrl, {
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+    let response: any;
+    for (const model of modelsToTry) {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+    response = await fetch(geminiUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -115,9 +118,11 @@ Rules:
           ]
         }
       })
-    })
+      if (response.ok) break;
+      console.warn(`Model ${model} failed with status:`, response.status);
+    }
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       const errText = await response.text()
       console.error("Gemini call failed:", errText)
       throw new Error("Failed to communicate with AI Tutor model")
