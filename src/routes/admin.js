@@ -2,8 +2,14 @@ import { Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { supabase, supabaseAnon } from "../lib/supabase.js";
 import { requireAuth, requireAdmin } from "../middleware/auth.js";
+import multer from "multer";
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { GoogleGenAI } from "@google/genai";
 
 const router = Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const genai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
 
 /**
  * @swagger
@@ -545,16 +551,16 @@ router.delete("/content/subjects/:id", requireAuth, requireAdmin, async (req, re
 
       if (subtopicIds.length > 0) {
         // Delete video_progress to resolve FK error
-        await supabase.from("video_progress").delete().in("subtopic_id", subtopicIds).catch(() => null);
+        try { await supabase.from("video_progress").delete().in("subtopic_id", subtopicIds); } catch {}
         // Delete notes
-        await supabase.from("notes").delete().in("subtopic_id", subtopicIds).catch(() => null);
+        try { await supabase.from("notes").delete().in("subtopic_id", subtopicIds); } catch {}
         // Delete quizzes
-        await supabase.from("quizzes").delete().in("subtopic_id", subtopicIds).catch(() => null);
+        try { await supabase.from("quizzes").delete().in("subtopic_id", subtopicIds); } catch {}
         // Delete subtopics
-        await supabase.from("subtopics").delete().in("chapter_id", chapterIds).catch(() => null);
+        try { await supabase.from("subtopics").delete().in("chapter_id", chapterIds); } catch {}
       }
       // Delete chapters
-      await supabase.from("chapters").delete().eq("subject_id", subjectId).catch(() => null);
+      try { await supabase.from("chapters").delete().eq("subject_id", subjectId); } catch {}
     }
 
     // Delete subject
@@ -578,14 +584,14 @@ router.delete("/content/subjects-all", requireAuth, requireAdmin, async (req, re
         const { data: subtopics } = await supabase.from("subtopics").select("id").in("chapter_id", chapterIds);
         const subtopicIds = (subtopics || []).map((st) => st.id);
         if (subtopicIds.length > 0) {
-          await supabase.from("video_progress").delete().in("subtopic_id", subtopicIds).catch(() => null);
-          await supabase.from("notes").delete().in("subtopic_id", subtopicIds).catch(() => null);
-          await supabase.from("quizzes").delete().in("subtopic_id", subtopicIds).catch(() => null);
-          await supabase.from("subtopics").delete().in("chapter_id", chapterIds).catch(() => null);
+          try { await supabase.from("video_progress").delete().in("subtopic_id", subtopicIds); } catch {}
+          try { await supabase.from("notes").delete().in("subtopic_id", subtopicIds); } catch {}
+          try { await supabase.from("quizzes").delete().in("subtopic_id", subtopicIds); } catch {}
+          try { await supabase.from("subtopics").delete().in("chapter_id", chapterIds); } catch {}
         }
-        await supabase.from("chapters").delete().eq("subject_id", subjectId).catch(() => null);
+        try { await supabase.from("chapters").delete().eq("subject_id", subjectId); } catch {}
       }
-      await supabase.from("subjects").delete().eq("id", subjectId).catch(() => null);
+      try { await supabase.from("subjects").delete().eq("id", subjectId); } catch {}
     }
     res.status(204).send();
   } catch (err) {
@@ -845,102 +851,156 @@ router.post("/content/teachers/test", requireAuth, requireAdmin, async (req, res
  * AI PDF Book Extraction Wizard Endpoint
  * Parses textbook metadata and generates chapters & topics
  */
-router.post("/content/extract-subject-pdf", requireAuth, requireAdmin, async (req, res) => {
-  const { name, language, classNum, group, pdfName } = req.body;
-  if (!name) {
-    return res.status(400).json({ error: "Subject name is required" });
+router.post("/content/extract-subject-pdf", requireAuth, requireAdmin, upload.single("pdf"), async (req, res) => {
+  const { name: rawName, language, classNum, group } = req.body;
+  const pdfBuffer = req.file?.buffer;
+  const pdfOriginalName = req.file?.originalname || "textbook.pdf";
+
+  // Infer subject name from provided name or PDF filename
+  let inferredName = (rawName || "").trim();
+  if (!inferredName) {
+    const cleanPdf = pdfOriginalName.replace(/\.[^/.]+$/, "").replace(/[-_]/g, " ");
+    inferredName = cleanPdf.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).slice(0, 5).join(" ") || "NCTB Subject";
   }
 
   try {
-    const subjectId = uuidv4();
-    const isBn = language === "bangla";
+    // ── Step 1: Parse PDF text ────────────────────────────────────────────────
+    let pdfText = "";
+    if (pdfBuffer) {
+      try {
+        const parsed = await pdfParse(pdfBuffer);
+        // Take up to 15,000 chars to stay within token limits
+        pdfText = parsed.text?.slice(0, 15000) || "";
+      } catch (parseErr) {
+        console.warn("PDF parse warning:", parseErr.message);
+        pdfText = "";
+      }
+    }
 
-    // Create subject record
+    // ── Step 2: Gemini AI extracts structure from PDF ─────────────────────────
+    const isBn = language === "bangla";
+    const langNote = isBn ? "The book is in Bangla (Bengali). Extract chapter titles and topic names in Bangla." : "The book is in English. Extract chapter titles and topic names in English.";
+
+    const aiPrompt = `You are an expert NCTB (Bangladesh National Curriculum and Textbook Board) curriculum analyst.
+
+Analyze the following textbook content and extract the complete chapter and topic structure.
+
+${langNote}
+Subject Name hint: "${inferredName}"
+Class: ${classNum || "10"}
+
+INSTRUCTIONS:
+1. Identify all chapters from the PDF text. Each chapter typically starts with "Chapter", "অধ্যায়", or a numbered heading.
+2. For each chapter, list the major topics/subtopics within it.
+3. If the PDF text is insufficient or unclear, generate a realistic NCTB curriculum structure for "${inferredName}" Class ${classNum || "10"} that matches the actual Bangladesh NCTB syllabus.
+4. Return ONLY a valid JSON array. No explanation, no markdown fences.
+
+JSON FORMAT (return exactly this shape):
+[
+  {
+    "title": "Chapter title here",
+    "topics": ["Topic 1", "Topic 2", "Topic 3"]
+  }
+]
+
+PDF CONTENT (first 15000 characters):
+${pdfText || "(PDF content unavailable — generate based on subject name and class)"}
+
+Return ONLY the JSON array:`;
+
+    let extractedChapters = [];
+    try {
+      const model = genai.models;
+      const result = await model.generateContent({
+        model: "gemini-2.0-flash",
+        contents: [{ role: "user", parts: [{ text: aiPrompt }] }],
+        config: { temperature: 0.2, maxOutputTokens: 4096 }
+      });
+
+      const rawText = result.text?.trim() || "";
+      // Strip markdown fences if any
+      const jsonStr = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+      extractedChapters = JSON.parse(jsonStr);
+      if (!Array.isArray(extractedChapters)) throw new Error("Not an array");
+    } catch (aiErr) {
+      console.error("Gemini extraction error:", aiErr.message);
+      // Fallback: build generic NCTB structure
+      extractedChapters = isBn
+        ? [
+            { title: `${inferredName} — ১ম অধ্যায়`, topics: ["মৌলিক ধারণা ও পরিচিতি", "প্রাথমিক সূত্রাবলী", "সংজ্ঞা ও পরিভাষা"] },
+            { title: `${inferredName} — ২য় অধ্যায়`, topics: ["মূল তত্ত্ব ও নীতি", "গাণিতিক প্রয়োগ", "উদাহরণ ও সমাধান"] },
+            { title: `${inferredName} — ৩য় অধ্যায়`, topics: ["উন্নত আলোচনা", "বোর্ড প্রশ্ন বিশ্লেষণ", "পরীক্ষার প্রস্তুতি"] },
+          ]
+        : [
+            { title: `${inferredName} — Chapter 1`, topics: ["Introduction & Basic Concepts", "Fundamental Definitions", "Core Principles"] },
+            { title: `${inferredName} — Chapter 2`, topics: ["Main Theory & Laws", "Mathematical Applications", "Worked Examples"] },
+            { title: `${inferredName} — Chapter 3`, topics: ["Advanced Analysis", "Board Question Patterns", "Exam Preparation"] },
+          ];
+    }
+
+    // ── Step 3: Save subject to DB ─────────────────────────────────────────────
+    const subjectId = uuidv4();
     const { data: newSubject, error: subErr } = await supabase
       .from("subjects")
-      .insert([
-        {
-          id: subjectId,
-          name: name,
-          class: parseInt(classNum || "10", 10),
-          group: group || "Science",
-          emoji: isBn ? "📖" : "📚",
-          teacher_id: "khalid",
-          sort_order: 1,
-        },
-      ])
+      .insert([{
+        id: subjectId,
+        name: inferredName,
+        class: parseInt(classNum || "10", 10),
+        group: parseInt(classNum || "10", 10) < 9 ? "All" : (group || "Science"),
+        emoji: isBn ? "📖" : "📚",
+        teacher_id: "khalid",
+        sort_order: 1,
+      }])
       .select()
       .single();
 
     if (subErr) throw subErr;
 
-    // AI generated standard NCTB chapters & subtopics template
-    const sampleChapters = isBn
-      ? [
-          { title: `${name} — ১ম অধ্যায়: মৌলিক সূচনা ও ধারণা`, topics: ["ভৌত রাশি ও পরিমাপ", "মৌলিক নীতি ও সূত্রাবলী", "গাণিতিক উদাহরণ ও প্রয়োগ"] },
-          { title: `${name} — ২য় অধ্যায়: গভীর পর্যালোচনা ও বলবিদ্যা`, topics: ["গতির সমীকরণ", "নিউটনের সূত্র ও ঘর্ষণ", "কাজ, ক্ষমতা ও শক্তি"] },
-          { title: `${name} — ৩য় অধ্যায়: বোর্ডের সম্ভাব্য প্রশ্ন ও নোট`, topics: ["সৃজনশীল ক ও খ অনুধাবন", "পদার্থ ও রসায়ন সমন্বয়", "পরীক্ষা প্রস্তুতি"] },
-        ]
-      : [
-          { title: `${name} — Chapter 1: Core Fundamentals & Principles`, topics: ["Fundamental Units & Measurement", "Scalar & Vector Quantities", "Solved Mathematical Numericals"] },
-          { title: `${name} — Chapter 2: Advanced Mechanics & Dynamics`, topics: ["Equations of Motion", "Newton's Laws & Friction", "Work, Power & Kinetic Energy"] },
-          { title: `${name} — Chapter 3: Board Exam Preparation & Syllabus Notes`, topics: ["Analytical Questions & Proofs", "Lab Experiment Notes", "Comprehensive Review"] },
-        ];
-
+    // ── Step 4: Save chapters + subtopics to DB ───────────────────────────────
     const createdChapters = [];
-
-    for (let cIdx = 0; cIdx < sampleChapters.length; cIdx++) {
-      const chMeta = sampleChapters[cIdx];
+    for (let cIdx = 0; cIdx < extractedChapters.length; cIdx++) {
+      const chMeta = extractedChapters[cIdx];
       const chId = uuidv4();
 
       const { data: createdCh } = await supabase
         .from("chapters")
-        .insert([
-          {
-            id: chId,
-            subject_id: subjectId,
-            title: chMeta.title,
-            sort_order: cIdx + 1,
-            is_free: cIdx === 0,
-            nctb_verified: true,
-          },
-        ])
+        .insert([{
+          id: chId,
+          subject_id: subjectId,
+          title: chMeta.title || `Chapter ${cIdx + 1}`,
+          sort_order: cIdx + 1,
+          is_free: cIdx === 0,
+          nctb_verified: true,
+        }])
         .select()
         .single();
 
       const createdTopics = [];
-      for (let tIdx = 0; tIdx < chMeta.topics.length; tIdx++) {
-        const topName = chMeta.topics[tIdx];
+      const topics = Array.isArray(chMeta.topics) ? chMeta.topics : [];
+      for (let tIdx = 0; tIdx < topics.length; tIdx++) {
+        const topName = topics[tIdx];
         const stId = uuidv4();
-
         const { data: createdSt } = await supabase
           .from("subtopics")
-          .insert([
-            {
-              id: stId,
-              chapter_id: chId,
-              title: topName,
-              notes_text: `# ${topName}\n\nComprehensive study summary and lecture notes for ${name}.`,
-              sort_order: tIdx + 1,
-              is_free: tIdx === 0,
-              is_published: true,
-            },
-          ])
+          .insert([{
+            id: stId,
+            chapter_id: chId,
+            title: topName,
+            notes_text: `# ${topName}\n\nThis topic is part of **${chMeta.title}**.\n\nClick "Generate 20 Notes" or "Generate 20 Quizzes" to build AI study content for this topic.`,
+            sort_order: tIdx + 1,
+            is_free: tIdx === 0,
+            is_published: true,
+          }])
           .select()
           .single();
 
         if (createdSt) createdTopics.push(createdSt);
       }
 
-      if (createdCh) {
-        createdChapters.push({ ...createdCh, subtopics: createdTopics });
-      }
+      if (createdCh) createdChapters.push({ ...createdCh, subtopics: createdTopics });
     }
 
-    res.json({
-      subject: newSubject,
-      chapters: createdChapters,
-    });
+    res.json({ subject: newSubject, chapters: createdChapters });
   } catch (err) {
     console.error("PDF Extraction error:", err);
     res.status(500).json({ error: err.message });
