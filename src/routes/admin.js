@@ -1082,38 +1082,57 @@ router.post("/content/generate-topic-notes", requireAuth, requireAdmin, async (r
   try {
     const isBn = language === "bangla";
 
-    const langInstr = isBn
-      ? "You MUST write all titles, content, and explanations in Bangla (Bengali) language."
-      : "You MUST write all titles, content, and explanations in English.";
+    // Coloured badge prefixes rendered by ReactMarkdown
+    const BADGES = {
+      short:     isBn ? "### ⚡ `সংক্ষিপ্ত নোট`" : "### ⚡ `SHORT NOTE`",
+      mid:       isBn ? "### 📘 `মধ্যম নোট`"     : "### 📘 `MID NOTE`",
+      large:     isBn ? "### 📚 `বিস্তারিত নোট`" : "### 📚 `DETAILED NOTE`",
+      inventive: isBn ? "### 🎯 `সৃজনশীল নোট`"  : "### 🎯 `INVENTIVE NOTE`",
+    };
 
-    const prompt = `You are an expert NCTB (Bangladesh National Curriculum and Textbook Board) educator.
-Generate exactly 20 unique study notes for the topic: "${topicTitle}".
+    const langInstr = isBn
+      ? "আপনাকে সমস্ত বিষয়বস্তু অবশ্যই বাংলা ভাষায় লিখতে হবে।"
+      : "Write all content in English.";
+
+    const categoryDefs = isBn
+      ? `বিভাগসমূহ:
+- SHORT (সংক্ষিপ্ত): সংক্ষিপ্ত সূত্র, সংজ্ঞা, দ্রুত মুখস্থ পয়েন্ট
+- MID (মধ্যম): ধারণা ব্যাখ্যা, প্রয়োগ, উদাহরণ সহ মাঝারি নোট
+- LARGE (বিস্তারিত): বিস্তারিত বিশ্লেষণ, উদ্ভাবন, বোর্ড প্রশ্ন প্যাটার্ন
+- INVENTIVE (সৃজনশীল): সৃজনশীল প্রশ্নের অনুশীলন, সিনারিও-ভিত্তিক প্রয়োগ`
+      : `Categories:
+- SHORT: Crisp formulas, definitions, quick-revision bullet points
+- MID: Concept explanations, applications, worked examples
+- LARGE: Detailed analysis, derivations, board question patterns, numerical problems
+- INVENTIVE: Creative scenario-based practice, Srijonshil-style application questions`;
+
+    const prompt = `You are a world-class NCTB (Bangladesh National Curriculum and Textbook Board) educator.
+
+Generate COMPLETE, COMPREHENSIVE study notes for: "${topicTitle}"
 ${langInstr}
 
-The notes must follow these 4 categories (5 notes each):
-1. SHORT (সংক্ষিপ্ত উত্তর / Short Formula & Notes): Brief, formula-focused, quick-revision notes.
-2. MID (মধ্যম উত্তর / Mid Concept Summary): Paragraph-length concept explanations.
-3. LARGE (দীর্ঘ আলোচনা / Detailed Syllabus Notes): Long-form notes with derivations, examples, board question patterns.
-4. INVENTIVE (সৃজনশীল চিন্তাধারা / Inventive Board Questions): Creative application-style notes for Srijonshil (inventive question) practice.
+${categoryDefs}
 
-CRITICAL RULES:
-- Each of the 20 notes MUST be completely UNIQUE — different title, different content, different angles.
-- Do NOT repeat the same sentence or concept across notes.
-- Each note must have meaningful, educational content specific to the topic "${topicTitle}".
-- Return ONLY a valid JSON array. No explanation, no markdown fences.
+═══ OUTPUT FORMAT (follow exactly) ═══
+1. Write pure Markdown — NO JSON, NO code blocks wrapping the output.
+2. Start every note heading with the exact badge line:
+   SHORT note     → ${BADGES.short} — [unique title]
+   MID note       → ${BADGES.mid} — [unique title]
+   LARGE note     → ${BADGES.large} — [unique title]
+   INVENTIVE note → ${BADGES.inventive} — [unique title]
+3. After each heading write rich content using:
+   • **bold** for key terms and formulas
+   • \`backtick\` for equations, symbols, variables
+   • > blockquote for critical laws, rules, definitions
+   • Numbered lists for derivation steps
+   • Bullet lists for key points / summaries
+   • --- (horizontal rule) between every note
+4. No fixed count — generate as many notes as needed for FULL topic coverage.
+5. Order: SHORT notes → MID notes → LARGE notes → INVENTIVE notes.
+6. Every note must be UNIQUE: different title, different concept angle, zero repetition.
+7. Begin DIRECTLY with the first heading. No intro text whatsoever.
 
-JSON FORMAT:
-[
-  {
-    "type": "short",
-    "category": "${isBn ? "সংক্ষিপ্ত উত্তর" : "Short Formula & Notes"}",
-    "index": 1,
-    "title": "unique note title here",
-    "content": "full note content here (use markdown formatting)"
-  }
-]
-
-Generate all 20 notes (5 short, 5 mid, 5 large, 5 inventive). Return ONLY the JSON array:`;
+Generate full notes for "${topicTitle}" now:`;
 
     const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
     let aiResult = null;
@@ -1124,12 +1143,12 @@ Generate all 20 notes (5 short, 5 mid, 5 large, 5 inventive). Return ONLY the JS
         aiResult = await genai.models.generateContent({
           model: m,
           contents: [{ role: "user", parts: [{ text: prompt }] }],
-          config: { temperature: 0.85, maxOutputTokens: 8192 }
+          config: { temperature: 0.8, maxOutputTokens: 16384 }
         });
         break;
       } catch (err) {
         lastErr = err;
-        console.warn(`Notes generation: model ${m} failed:`, err.message);
+        console.warn(`Notes gen: model ${m} failed:`, err.message);
       }
     }
 
@@ -1137,40 +1156,22 @@ Generate all 20 notes (5 short, 5 mid, 5 large, 5 inventive). Return ONLY the JS
       return res.status(503).json({ error: "AI generation failed due to high demand. Please try again. " + (lastErr?.message || "") });
     }
 
-    const rawText = aiResult.text?.trim() || "";
-    const jsonStr = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    let allGeneratedNotes;
-    try {
-      allGeneratedNotes = JSON.parse(jsonStr);
-      if (!Array.isArray(allGeneratedNotes)) throw new Error("Not an array");
-    } catch (parseErr) {
-      console.error("Notes JSON parse error:", parseErr.message, "Raw:", rawText.slice(0, 500));
-      return res.status(500).json({ error: "AI returned invalid JSON. Please try again." });
+    const formattedMarkdown = aiResult.text?.trim() || "";
+    if (!formattedMarkdown) {
+      return res.status(500).json({ error: "AI returned empty content. Please try again." });
     }
 
-    // Update subtopics notes_text with AI-generated markdown
-    const formattedMarkdown = allGeneratedNotes
-      .map((n) => `## [${(n.type || "note").toUpperCase()}] ${n.title}\n\n${n.content}`)
-      .join("\n\n---\n\n");
+    await supabase.from("subtopics").update({ notes_text: formattedMarkdown }).eq("id", topicId);
 
-    await supabase
-      .from("subtopics")
-      .update({ notes_text: formattedMarkdown })
-      .eq("id", topicId);
+    // Count note headings (emoji badges)
+    const noteCount = (formattedMarkdown.match(/^### [⚡📘📚🎯]/gmu) || []).length;
 
-    res.json({
-      success: true,
-      totalNotes: allGeneratedNotes.length,
-      notes: allGeneratedNotes,
-    });
+    res.json({ success: true, totalNotes: noteCount, markdownLength: formattedMarkdown.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-/**
- * Generate 20 Quizzes per Topic (5 Easy, 5 Medium, 5 Hard, 5 Mixed) — AI powered
- */
 router.post("/content/generate-topic-quizzes", requireAuth, requireAdmin, async (req, res) => {
   const { topicId, topicTitle, language } = req.body;
   if (!topicId) return res.status(400).json({ error: "topicId is required" });
