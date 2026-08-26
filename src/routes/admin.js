@@ -1075,41 +1075,82 @@ Return ONLY the JSON array:`;
   }
 });
 
-/**
- * Generate 20 Categorized Notes per Topic (5 Short, 5 Mid, 5 Large, 5 Inventive)
- */
 router.post("/content/generate-topic-notes", requireAuth, requireAdmin, async (req, res) => {
   const { topicId, topicTitle, language } = req.body;
   if (!topicId) return res.status(400).json({ error: "topicId is required" });
 
   try {
     const isBn = language === "bangla";
-    const notesCategories = [
-      { type: "short", label: isBn ? "সংক্ষিপ্ত উত্তর" : "Short Formula & Notes", count: 5 },
-      { type: "mid", label: isBn ? "মধ্যম উত্তর" : "Mid Concept Summary", count: 5 },
-      { type: "large", label: isBn ? "দীর্ঘ আলোচনা" : "Detailed Syllabus Notes", count: 5 },
-      { type: "inventive", label: isBn ? "সৃজনশীল চিন্তাধারা" : "Inventive Board Questions", count: 5 },
-    ];
 
-    const allGeneratedNotes = [];
+    const langInstr = isBn
+      ? "You MUST write all titles, content, and explanations in Bangla (Bengali) language."
+      : "You MUST write all titles, content, and explanations in English.";
 
-    notesCategories.forEach((cat) => {
-      for (let i = 1; i <= cat.count; i++) {
-        allGeneratedNotes.push({
-          type: cat.type,
-          category: cat.label,
-          index: i,
-          title: `${cat.label} #${i}: ${topicTitle || "Topic"}`,
-          content: isBn
-            ? `### ${cat.label} #${i}\n\n**মূল প্রসঙ্গ:** ${topicTitle || "পাঠ"}\n- সূত্রের ব্যাখ্যা ও প্রয়োগ\n- বোর্ডের জন্য গুরুত্বপূর্ণ গাণিতিক সমস্যা\n- সহজে মনে রাখার শর্টকাট টেকনিক।`
-            : `### ${cat.label} #${i}\n\n**Core Concept:** ${topicTitle || "Lesson"}\n- Key formulas & derivations\n- Solved numerical board questions\n- Concept maps & shortcuts for quick revision.`,
+    const prompt = `You are an expert NCTB (Bangladesh National Curriculum and Textbook Board) educator.
+Generate exactly 20 unique study notes for the topic: "${topicTitle}".
+${langInstr}
+
+The notes must follow these 4 categories (5 notes each):
+1. SHORT (সংক্ষিপ্ত উত্তর / Short Formula & Notes): Brief, formula-focused, quick-revision notes.
+2. MID (মধ্যম উত্তর / Mid Concept Summary): Paragraph-length concept explanations.
+3. LARGE (দীর্ঘ আলোচনা / Detailed Syllabus Notes): Long-form notes with derivations, examples, board question patterns.
+4. INVENTIVE (সৃজনশীল চিন্তাধারা / Inventive Board Questions): Creative application-style notes for Srijonshil (inventive question) practice.
+
+CRITICAL RULES:
+- Each of the 20 notes MUST be completely UNIQUE — different title, different content, different angles.
+- Do NOT repeat the same sentence or concept across notes.
+- Each note must have meaningful, educational content specific to the topic "${topicTitle}".
+- Return ONLY a valid JSON array. No explanation, no markdown fences.
+
+JSON FORMAT:
+[
+  {
+    "type": "short",
+    "category": "${isBn ? "সংক্ষিপ্ত উত্তর" : "Short Formula & Notes"}",
+    "index": 1,
+    "title": "unique note title here",
+    "content": "full note content here (use markdown formatting)"
+  }
+]
+
+Generate all 20 notes (5 short, 5 mid, 5 large, 5 inventive). Return ONLY the JSON array:`;
+
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+    let aiResult = null;
+    let lastErr = null;
+
+    for (const m of modelsToTry) {
+      try {
+        aiResult = await genai.models.generateContent({
+          model: m,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { temperature: 0.85, maxOutputTokens: 8192 }
         });
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Notes generation: model ${m} failed:`, err.message);
       }
-    });
+    }
 
-    // Update subtopics notes_text with structured 20 notes JSON markdown
+    if (!aiResult) {
+      return res.status(503).json({ error: "AI generation failed due to high demand. Please try again. " + (lastErr?.message || "") });
+    }
+
+    const rawText = aiResult.text?.trim() || "";
+    const jsonStr = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    let allGeneratedNotes;
+    try {
+      allGeneratedNotes = JSON.parse(jsonStr);
+      if (!Array.isArray(allGeneratedNotes)) throw new Error("Not an array");
+    } catch (parseErr) {
+      console.error("Notes JSON parse error:", parseErr.message, "Raw:", rawText.slice(0, 500));
+      return res.status(500).json({ error: "AI returned invalid JSON. Please try again." });
+    }
+
+    // Update subtopics notes_text with AI-generated markdown
     const formattedMarkdown = allGeneratedNotes
-      .map((n) => `## [${n.type.toUpperCase()}] ${n.title}\n\n${n.content}`)
+      .map((n) => `## [${(n.type || "note").toUpperCase()}] ${n.title}\n\n${n.content}`)
       .join("\n\n---\n\n");
 
     await supabase
@@ -1128,7 +1169,7 @@ router.post("/content/generate-topic-notes", requireAuth, requireAdmin, async (r
 });
 
 /**
- * Generate 20 Quizzes per Topic (5 Easy, 5 Medium, 5 Hard, 5 Mixed)
+ * Generate 20 Quizzes per Topic (5 Easy, 5 Medium, 5 Hard, 5 Mixed) — AI powered
  */
 router.post("/content/generate-topic-quizzes", requireAuth, requireAdmin, async (req, res) => {
   const { topicId, topicTitle, language } = req.body;
@@ -1136,8 +1177,73 @@ router.post("/content/generate-topic-quizzes", requireAuth, requireAdmin, async 
 
   try {
     const isBn = language === "bangla";
-    const difficulties = ["easy", "medium", "hard", "mixed"];
-    const generatedQuestions = [];
+
+    const langInstr = isBn
+      ? "You MUST write all questions, options, and explanations in Bangla (Bengali) language."
+      : "You MUST write all questions, options, and explanations in English.";
+
+    const prompt = `You are an expert NCTB (Bangladesh National Curriculum and Textbook Board) MCQ question maker.
+Generate exactly 20 unique multiple choice questions (MCQs) for the topic: "${topicTitle}".
+${langInstr}
+
+Create 5 questions for each difficulty level:
+- 5 EASY questions (basic recall, definition-level)
+- 5 MEDIUM questions (application and understanding)
+- 5 HARD questions (analysis, higher-order thinking)
+- 5 MIXED questions (combined difficulty, board-exam style)
+
+CRITICAL RULES:
+- Every question MUST be completely UNIQUE — different question text, different concept angle.
+- Each question MUST have exactly 4 distinct options.
+- Do NOT repeat question text, options, or explanations.
+- Questions must be educationally meaningful and specific to "${topicTitle}".
+- Return ONLY a valid JSON array. No explanation, no markdown fences.
+
+JSON FORMAT:
+[
+  {
+    "difficulty": "easy",
+    "question_text": "unique question here",
+    "options": ["option A", "option B", "option C", "option D"],
+    "correct_answer_index": 0,
+    "explanation": "why this answer is correct"
+  }
+]
+
+Generate all 20 questions (5 easy, 5 medium, 5 hard, 5 mixed). Return ONLY the JSON array:`;
+
+    const modelsToTry = ["gemini-3.7-flash", "gemini-3.6-flash", "gemini-3.5-flash"];
+    let aiResult = null;
+    let lastErr = null;
+
+    for (const m of modelsToTry) {
+      try {
+        aiResult = await genai.models.generateContent({
+          model: m,
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          config: { temperature: 0.85, maxOutputTokens: 8192 }
+        });
+        break;
+      } catch (err) {
+        lastErr = err;
+        console.warn(`Quiz generation: model ${m} failed:`, err.message);
+      }
+    }
+
+    if (!aiResult) {
+      return res.status(503).json({ error: "AI generation failed due to high demand. Please try again. " + (lastErr?.message || "") });
+    }
+
+    const rawText = aiResult.text?.trim() || "";
+    const jsonStr = rawText.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
+    let parsedQuestions;
+    try {
+      parsedQuestions = JSON.parse(jsonStr);
+      if (!Array.isArray(parsedQuestions)) throw new Error("Not an array");
+    } catch (parseErr) {
+      console.error("Quiz JSON parse error:", parseErr.message, "Raw:", rawText.slice(0, 500));
+      return res.status(500).json({ error: "AI returned invalid JSON. Please try again." });
+    }
 
     // Create a parent Quiz for this topic
     const quizId = uuidv4();
@@ -1157,26 +1263,16 @@ router.post("/content/generate-topic-quizzes", requireAuth, requireAdmin, async 
 
     if (quizErr) throw quizErr;
 
-    let sortOrder = 1;
-    difficulties.forEach((diff) => {
-      for (let i = 1; i <= 5; i++) {
-        generatedQuestions.push({
-          id: uuidv4(),
-          quiz_id: quizId,
-          question_text: isBn
-            ? `[${diff.toUpperCase()}] প্রশ্ন #${i}: ${topicTitle || "বিষয়"} সংক্রান্ত সঠিক উক্তি কোনটি?`
-            : `[${diff.toUpperCase()}] Question #${i}: What is the core application of ${topicTitle || "this topic"}?`,
-          options: isBn
-            ? ["ক) স্থানান্তরের হার", "খ) ভরের পরিবর্তনের হার", "গ) শক্তির নিত্যতা সূত্র", "ঘ) কাজের পরিমাণ"]
-            : ["A) Rate of displacement", "B) Conservation of Energy", "C) Newton's 2nd Law", "D) Mass-Energy Equivalence"],
-          correct_answer_index: (i - 1) % 4,
-          explanation: isBn
-            ? "সঠিক উত্তরটি সরাসরি এনসিটিবি পাঠ্যবইয়ের অধ্যায়ের দ্বিতীয় নীতি থেকে সংগৃহীত।"
-            : "The correct option directly follows from fundamental textbook definitions.",
-          sort_order: sortOrder++,
-        });
-      }
-    });
+    // Build questions rows from AI output
+    const generatedQuestions = parsedQuestions.map((q, idx) => ({
+      id: uuidv4(),
+      quiz_id: quizId,
+      question_text: q.question_text || `Question ${idx + 1}`,
+      options: Array.isArray(q.options) ? q.options : ["A", "B", "C", "D"],
+      correct_answer_index: typeof q.correct_answer_index === "number" ? q.correct_answer_index : 0,
+      explanation: q.explanation || "",
+      sort_order: idx + 1,
+    }));
 
     // Save questions to db
     const { error: qErr } = await supabase.from("questions").insert(generatedQuestions);
